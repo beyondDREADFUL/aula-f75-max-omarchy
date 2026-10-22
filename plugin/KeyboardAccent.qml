@@ -27,8 +27,10 @@ Panel {
   // Picker state.
   property bool exact: false          // use the colour as written
   property bool keep: false           // pin the colour across theme changes
+  property bool pickTheme: false      // Apply returns to the theme colour
   property var previews: ({})         // typed hex -> colour the keys will show
   property string previewHex: ""      // same, for the hex field
+  property string previewFor: ""      // the typed colour previewHex belongs to
   property string message: ""
   property bool failed: false
 
@@ -41,6 +43,14 @@ Panel {
   readonly property string tooltipText: keyboardHex === ""
     ? "Keyboard accent: no colour applied yet"
     : "Keyboard " + keyboardHex + (pinned ? " · pinned (theme " + themeHex + ")" : matches ? " · matches theme" : " · custom (theme " + themeHex + ")")
+
+  // Hint and message lines keep a fixed height so the popup never resizes
+  // while they come and go.
+  FontMetrics {
+    id: lineMetrics
+    font.family: root.family
+    font.pixelSize: Style.font.caption
+  }
 
   implicitWidth: bar ? bar.barSize : 26
   implicitHeight: bar ? bar.barSize : 26
@@ -150,12 +160,14 @@ Panel {
 
   function requestPreview(text) {
     var hex = root.normalize(text)
+    root.previewFor = ""
     if (hex === "") {
       root.previewHex = ""
       return
     }
     root.enqueue(["preview"].concat(root.exactArgs(), [hex]), "preview", function(result) {
       root.previewHex = result.ok ? String(result.keyboard).toUpperCase() : ""
+      root.previewFor = hex
     })
   }
 
@@ -179,6 +191,10 @@ Panel {
   }
 
   function applyFromInput() {
+    if (root.pickTheme) {
+      root.resetToTheme()
+      return
+    }
     var hex = root.normalize(hexInput.text)
     if (hex === "") {
       root.failed = true
@@ -198,6 +214,7 @@ Panel {
     root.refresh()
     root.loadPreviews()
     hexInput.text = root.keyboardHex.replace("#", "")
+    root.pickTheme = false
     root.previewHex = ""
     root.message = ""
   }
@@ -322,8 +339,8 @@ Panel {
               height: Style.space(56)
               radius: Style.space(6)
               color: modelData.hex !== "" ? modelData.hex : "transparent"
-              border.width: Math.max(1, Style.space(1))
-              border.color: Qt.darker(root.fg, 1.8)
+              border.width: modelData.theme && root.pickTheme ? Style.space(2) : Math.max(1, Style.space(1))
+              border.color: modelData.theme && root.pickTheme ? root.fg : Qt.darker(root.fg, 1.8)
 
               Column {
                 anchors.centerIn: parent
@@ -351,7 +368,13 @@ Panel {
               MouseArea {
                 anchors.fill: parent
                 enabled: modelData.theme
-                onClicked: root.resetToTheme()
+                onClicked: {
+                  root.pickTheme = true
+                  hexInput.text = ""
+                  root.previewHex = ""
+                  root.failed = false
+                  root.message = "Press Apply to return to the theme colour"
+                }
               }
             }
           }
@@ -381,15 +404,18 @@ Panel {
               height: width
               radius: width / 2
               color: root.shown(modelData)
-              border.width: root.shown(modelData) === root.keyboardHex ? Style.space(2) : Math.max(1, Style.space(1))
-              border.color: root.shown(modelData) === root.keyboardHex ? root.fg : Qt.darker(root.fg, 2.0)
+              readonly property bool picked: !root.pickTheme && root.normalize(hexInput.text) === modelData
+              border.width: picked ? Style.space(2) : Math.max(1, Style.space(1))
+              border.color: picked ? root.fg : Qt.darker(root.fg, 2.0)
 
               MouseArea {
                 anchors.fill: parent
                 onClicked: {
+                  root.pickTheme = false
                   hexInput.text = modelData.replace("#", "")
                   root.requestPreview(hexInput.text)
-                  root.setColour(modelData)
+                  root.message = "Press Apply to set " + modelData
+                  root.failed = false
                 }
               }
             }
@@ -423,7 +449,10 @@ Panel {
             selectedTextColor: root.bg
             font.family: root.family
             font.pixelSize: Style.font.caption
-            onTextEdited: root.requestPreview(text)
+            onTextEdited: {
+              root.pickTheme = false
+              root.requestPreview(text)
+            }
             Keys.onReturnPressed: root.applyFromInput()
             Keys.onEnterPressed: root.applyFromInput()
           }
@@ -456,9 +485,13 @@ Panel {
 
         Text {
           width: parent.width
-          visible: root.previewHex !== "" && root.previewHex !== root.normalize(hexInput.text)
-          text: "Keys will show " + root.previewHex + ", adjusted by the theme's colour limits. Turn on Exact colour to use it as written."
+          readonly property bool shown: root.previewHex !== "" && root.previewFor === root.normalize(hexInput.text) && root.previewHex !== root.previewFor
+          height: lineMetrics.height * 2
+          opacity: shown ? 1 : 0
+          text: shown ? "Keys will show " + root.previewHex + ", adjusted by the theme's colour limits. Turn on Exact colour to use it as written." : " "
           wrapMode: Text.WordWrap
+          maximumLineCount: 2
+          elide: Text.ElideRight
           color: root.dim
           font.family: root.family
           font.pixelSize: Style.font.caption
@@ -633,9 +666,11 @@ Panel {
 
         Text {
           width: parent.width
-          visible: root.message !== ""
-          text: root.message
+          height: lineMetrics.height * 2
+          text: root.message === "" ? " " : root.message
           wrapMode: Text.WordWrap
+          maximumLineCount: 2
+          elide: Text.ElideRight
           color: root.failed ? "#E5484D" : root.dim
           font.family: root.family
           font.pixelSize: Style.font.caption
