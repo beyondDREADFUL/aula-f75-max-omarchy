@@ -42,8 +42,8 @@ Panel {
     ? "Keyboard accent: no colour applied yet"
     : "Keyboard " + keyboardHex + (pinned ? " · pinned (theme " + themeHex + ")" : matches ? " · matches theme" : " · custom (theme " + themeHex + ")")
 
-  // Hint and message lines keep a fixed height so the popup never resizes
-  // while they come and go.
+  // The message line keeps a fixed height so the popup never resizes while
+  // it comes and goes.
   FontMetrics {
     id: lineMetrics
     font.family: root.family
@@ -366,7 +366,7 @@ Panel {
                   hexInput.text = ""
                   root.previewHex = ""
                   root.failed = false
-                  root.message = "Press Apply to return to the theme colour"
+                  root.message = "Press Apply to use the theme colour"
                 }
               }
             }
@@ -586,10 +586,9 @@ Panel {
 
         Text {
           width: parent.width
-          height: lineMetrics.height * 2
+          height: lineMetrics.height
           text: root.message === "" ? " " : root.message
-          wrapMode: Text.WordWrap
-          maximumLineCount: 2
+          maximumLineCount: 1
           elide: Text.ElideRight
           color: root.failed ? "#E5484D" : root.dim
           font.family: root.family
