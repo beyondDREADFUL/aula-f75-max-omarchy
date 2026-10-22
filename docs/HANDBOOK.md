@@ -16,20 +16,14 @@ calibration (§6.3) and device paths.
 
 ---
 
-## 1. Status at a glance (reference unit)
+## 1. At a glance
 
 | Item | Value |
 |---|---|
-| Active theme | `last-horizon` |
-| Theme accent | `#B59790` → overridden to `#F34820` |
-| Keys (direct zone) | `#F34820` |
-| Underglow (effect zone) | `#A0471F` (firmware-calibrated) |
-| Brightness | Level 5, preserved across applies |
-| Transport | Wired `0C45:800A`, interface 03 |
-| Wired `apply` time | **0.68 s** (1.00 s with `--verify`) |
-| Wireless `apply` time | **0.19 s** (measured, no verify) |
-| Overrides | 34 — one per installed theme |
-| Daemons | None. Event-driven hooks and one-shot udev service only |
+| Wired `apply` | about 0.7 s (about 1 s with `--verify`) |
+| Wireless `apply` | about 0.2 s |
+| Daemons | None: event-driven hooks and a one-shot udev service |
+| Per-theme colours | `[theme_overrides]` in the config; none are required |
 
 ---
 
@@ -114,7 +108,7 @@ USB ID plus descriptor, so it is never selected.
 |---|---|
 | `~/.local/bin/omarchy-keyboard-accent` | Controller: detection, colour pipeline, both protocols, verification |
 | `~/.local/bin/omarchy-keyboard-accent-queue` | Single-flight debounced dispatcher used by hooks |
-| `~/.config/omarchy/keyboard-accent/config.toml` | Configuration, including 34 theme overrides |
+| `~/.config/omarchy/keyboard-accent/config.toml` | Configuration, including per-theme overrides |
 | `~/.config/omarchy/hooks/theme-set.d/keyboard-accent.sh` | Theme-change hook |
 | `~/.config/omarchy/hooks/post-boot.d/keyboard-accent.sh` | Login hook |
 | `~/.local/state/omarchy/keyboard-accent/state.json` | Brightness, transport, target, zone maps, cached frame |
@@ -273,66 +267,17 @@ corrected from software.
 
 ### 6.4 Per-theme overrides
 
-All 34 installed themes are pinned, so retuning `min_saturation` /
-`max_lightness` later cannot change an existing theme's colour. To fall back
-to the automatic transform for a theme, delete its line.
+`[theme_overrides]` pins a hex colour to a theme slug. It is used verbatim,
+bypassing the transform, so later changes to `min_saturation` or
+`max_lightness` cannot alter a pinned theme. Delete a line to fall back to the
+automatic transform for that theme. `config.example.toml` ships overrides for
+the bundled Omarchy themes as a starting point; add one per theme you install.
 
-**Bundled themes** (`/usr/share/omarchy/themes`):
-
-| Theme | Colour | Note |
-|---|---|---|
-| `catppuccin` | `#1E70F5` | |
-| `catppuccin-latte` | `#8839EF` | brand mauve, kept from earlier config |
-| `ethereal` | `#202CF3` | |
-| `everforest` | `#20F3D7` | |
-| `flexoki-light` | `#0A5CBC` | |
-| `gruvbox` | `#E8891A` | hand-tuned: amber identity, not the mint transform |
-| `hackerman` | `#1CF84B` | |
-| `kanagawa` | `#F3D420` | confirmed on hardware |
-| `last-horizon` | `#F34820` | confirmed on hardware |
-| `lumon` | `#20A8F3` | |
-| `lupine` | `#2059F3` | |
-| `matte-black` | `#E78E0C` | |
-| `miasma` | `#A1C30A` | |
-| `nord` | `#88C0D0` | brand frost colour, kept from earlier config |
-| `osaka-jade` | `#0BD97B` | |
-| `retro-82` | `#F77E1C` | |
-| `ristretto` | `#F34F20` | |
-| `rose-pine` | `#E58FA8` | hand-tuned: rose identity, not electric cyan |
-| `solitude` | `#6E93C4` | hand-tuned: muted blue, not electric cyan |
-| `tokyo-night` | `#2064F3` | |
-| `vantablack` | `#8FA6B8` | hand-tuned: cool steel for a neutral theme |
-| `white` | `#E6E1D8` | hand-tuned: warm white, confirming underglow is acceptable |
-
-**User themes** (`~/.config/omarchy/themes`):
-
-| Theme | Colour | Note |
-|---|---|---|
-| `a-building-with-a-flag-on-the-roof-palette` | `#2081F3` | |
-| `aether` | `#F34B20` | |
-| `batman` | `#1754F3` | |
-| `catppuccin-dark` | `#1E70F5` | |
-| `felix` | `#FF5E14` | |
-| `fireside` | `#F09A28` | hand-tuned: fire amber |
-| `ign-batman-aether` | `#205FF3` | |
-| `lavender` | `#8120F3` | |
-| `nebula` | `#6E1BF3` | |
-| `red-samurai-palette` | `#F71D28` | |
-| `tokyoled` | `#2064F3` | |
-| `tsukiyo` | `#20C0F3` | |
-
-Notes:
-
-- Overrides bypass the transform entirely, so they are not affected by
-  `min_saturation` / `max_lightness`.
 - Keys use the override scaled by brightness; the underglow still receives
   firmware calibration.
-- `white` and `vantablack` are the only near-neutral entries. The firmware's
-  red attenuation gives them a cooler underglow than their keys; `white`
-  was checked on hardware and accepted, `vantablack` follows the same
-  reasoning.
-- Two pairs intentionally share a colour because they share an accent:
-  `catppuccin`/`catppuccin-dark`, `tokyo-night`/`tokyoled`.
+- Near-neutral overrides (white, grey-blue) get a cooler underglow than their
+  keys because of the firmware's red attenuation (§6.3).
+- Two themes may share a colour if they share an accent.
 
 ---
 
@@ -467,9 +412,7 @@ exact arithmetic.
 4. Accept only if the error is ≤ 12; otherwise keep the stored level.
 
 This is what preserves a brightness change made with the keyboard's own
-keys. Test on 2026-10-22: state said 5, keyboard was forced to 3 behind the
-controller's back, the next `apply` inferred 3, wrote `#A03015` for the keys
-and reported `verified=True`.
+keys: the next `apply` infers the new level instead of resetting it.
 
 ### 9.3 `set-brightness N`
 
@@ -480,33 +423,14 @@ Persists a level and reapplies the current colour at that level. It updates
 
 ## 10. Performance
 
-Measured on 2026-10-22, wired, brightness 5, same theme.
+Wired fast path, about 0.7 s: page-0 read about 0.12 s, direct frame about
+0.27 s, static effect about 0.19 s, the rest process start and state I/O. Keys
+change about 0.4 s in and the underglow about 0.65 s in. A full table read is
+about 0.3 s. Wireless is about 0.2 s: two packets, no readback.
 
-| Stage | Before | After |
-|---|---|---|
-| Fast path `apply` (no verify) | 3.56 s | **0.68 s** |
-| `apply --verify` | 3.57 s | **1.00 s** |
-| Keys update | ~2.0 s in | **~0.4 s in** |
-| Underglow update | ~0.5 s in | ~0.65 s in |
-| Full table read | 0.71 s | 0.32 s |
-| Page-0 read | — | 0.12 s |
-
-Where the remaining 0.68 s goes: page-0 read ~0.12 s, direct frame ~0.27 s,
-static effect ~0.19 s, process start and state I/O the rest.
-
-The wireless path measured **0.19 s**: two packets, no readback, so none
-of the wired optimisations touch it.
-
-Safety checks run before adopting the pacing changes:
-
-- 20 × `apply --verify` → 20/20 `verified=True`.
-- 12 × plain `apply` → no failures.
-- Six colours across the spectrum (`#F34820`, `#00A0FF`, `#8839EF`,
-  `#88C0D0`, `#F3D420`, `#B59790`) → all `verified=True`.
-- Corrupted cache → full fallback, verified, cache repopulated, next apply
-  fast again.
-- Theme switch to `kanagawa` and back, confirmed visually on the keyboard.
-
+The pacing constants (`FEATURE_SETTLE`, `ACK_POLL`, `PAGE_SETTLE`, currently
+10/20/25 ms) were reduced until repeated `apply --verify` runs stopped being
+reliable, then set with margin. Raise them if verification starts failing.
 
 ---
 
@@ -527,7 +451,7 @@ Safety checks run before adopting the pacing changes:
 | `lighting.speed` | `3` | static-mode speed (ignored by static) |
 | `lighting.wireless_color_order` | `rgb` | verified for this unit; `bgr` for most sources |
 | `lighting.match_direct_zone` | `false` | `true` matches keys to the calibrated underglow |
-| `theme_overrides` | 34 entries | see §6.4 |
+| `theme_overrides` | one line per theme | see §6.4 |
 
 `match_direct_zone = true` forces the fallback path on wired (it needs the
 calibrated effect bytes) and makes keys slightly less red but more uniform.
@@ -826,38 +750,6 @@ the bar showing the keyboard's current colour and a popup picker.
   `refresh`, `reset`).
 - **Enable**: `omarchy plugin enable beyond.keyboard-accent`, then
   `omarchy restart shell`.
-
----
-
-## 19. Change log
-
-### 2026-10-21
-- Wired controller, hooks, queue, locking, brightness preservation,
-  verification, logging, state.
-- Dongle support added: USB/descriptor detection, 32-byte output protocol,
-  static-only colour, persisted brightness.
-- udev rules and one-shot service installed with a dedicated `aula` group.
-- First real wireless apply; colour came out blue, fixed by switching
-  `wireless_color_order` from `bgr` to `rgb` (verified on hardware).
-
-### 2026-10-22
-- Added `apply --exact` (colour as written, no transform) after white showed as
-  light gold through the saturation floor.
-- Bar widget added (§18) and the project published as a repository with an
-  installer.
-- Protocol errors retried (3 attempts, 0.5 s apart). Added after a theme
-  change was dropped on a missed ack (`no ack for 4/24`, 11:26)..
-- Wired `apply` optimised from 3.56 s to 0.68 s:
-  - verify made opt-in (`--verify`);
-  - direct frame written before `set_static`, using a cached full frame;
-  - page-0 read replaces the full 9-page read for brightness inference;
-  - pacing constants reduced (10/20/25 ms) and validated.
-- All 34 installed themes pinned in `[theme_overrides]`, with six hand-tuned
-  (`white`, `vantablack`, `fireside`, `solitude`, `gruvbox`, `rose-pine`) and
-  the earlier `nord` / `catppuccin-latte` brand colours kept.
-- Verified: 34/34 overrides resolve exactly; no missing or stale slugs.
-- Verified: brightness inference on the fast path, cache fallback, 20/20
-  verified applies, visual theme switch to `kanagawa` and `white`.
 
 ---
 

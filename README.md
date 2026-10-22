@@ -16,6 +16,7 @@ Makes the **AULA F75 Max** keyboard's lighting follow your [Omarchy](https://oma
 | `config.example.toml` | `~/.config/omarchy/keyboard-accent/config.toml` | Saturation and lightness limits, per-theme overrides. Not overwritten if it exists. |
 | `plugin/` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | Bar widget (needs `jq`). |
 | `docs/HANDBOOK.md` | | Protocol notes, design, troubleshooting. |
+| `CHANGELOG.md` | | What changed and when. |
 
 Event-driven, no daemon and no polling.
 
