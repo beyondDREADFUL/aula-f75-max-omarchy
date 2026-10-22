@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-10-22 (later)
-- Theme overrides reworked twice. They now represent each theme's wallpaper (accent as fallback), with warm and purple values corrected for the underglow's weak red so they no longer drift to green or blue (Kanagawa is indigo, not yellow).
+- Theme overrides reworked. They follow each theme's own accent so the keyboard matches the desktop, with warm and purple values corrected for the underglow's weak red so they no longer drift to green or blue. Exceptions where the accent cannot show on LEDs: Kanagawa (indigo from the wallpaper), Fireside (campfire orange) and the grey themes (soft whites).
 - Investigated animated theme changes (cross-fade, per-key wave, firmware modes); not adopted. Findings are in the handbook (section 19).
 - Pinned colours: `apply --pin --color HEX` keeps a colour across theme changes,
   login and reconnects until `unpin`. The widget has a Keep this colour switch.

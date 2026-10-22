@@ -67,48 +67,50 @@ match_direct_zone = false
 # brightness); the underglow is still calibrated by the firmware.  Keys are
 # theme slugs, not display names.
 #
-# How the values were chosen: each is the colour that best represents what the
-# theme looks like (its wallpaper), with the theme accent as a fallback when
-# the wallpaper has no clear hue.  The comment says what each came from.  The
-# underglow's firmware gain cuts red to about two thirds, which drags warm
-# colours toward green and pinks toward violet, so warm and purple values have
-# green and blue lowered a little until keys and underglow are both close to
-# the intended hue.  Blues, cyans and greens are used as chosen.  Grey themes
-# are soft whites.  Re-run this list when you add or remove a theme.
+# How the values were chosen: each follows the theme's own accent (accent in
+# its colors.toml), so the keyboard matches the colour Omarchy highlights on
+# screen.  Strongly saturated accents are kept; muted ones keep their hue with
+# saturation raised to 0.55 + 0.5 x the accent's saturation (at most 0.95) and
+# lightness held in 0.46-0.54.  The underglow's firmware gain cuts red to about
+# two thirds, which drags warm colours toward green and purples toward blue, so
+# for those green and blue are lowered a little until keys and underglow are
+# both close to the intended hue.  Exceptions, where the accent cannot show on
+# LEDs (cream or grey), use a colour from the wallpaper or a soft white; the
+# comment says which.  Re-run this list when you add or remove a theme.
 # Bundled Omarchy themes
-catppuccin = "#A24CC1"  # lilac Totoro moon
-catppuccin-latte = "#E8427C"  # pastel pink waves
-ethereal = "#4A36B8"  # violet-blue nebula
-everforest = "#5D9460"  # misty green forest
-flexoki-light = "#1F6FD0"  # accent blue (wallpaper neutral)
-gruvbox = "#E07221"  # warm ochre painting
-hackerman = "#17D8E8"  # cyan synthwave
-kanagawa = "#2B4FC9"  # indigo wave (confirmed)
-last-horizon = "#E05A45"  # accent coral (wallpaper neutral)
-lumon = "#3DB8E8"  # pale cyan on navy
-lupine = "#3AA6E6"  # sky blue
-matte-black = "#F56E19"  # orange sunset
-miasma = "#A09430"  # olive accent
-nord = "#4FA8D8"  # icy blue
-osaka-jade = "#1CC77A"  # neon green night
-retro-82 = "#18C4B0"  # teal vinyl
-ristretto = "#E85018"  # rust-orange stripes
-rose-pine = "#E8627B"  # pastel pink blobs
-solitude = "#D6DDE3"  # grey ink, soft white
-tokyo-night = "#9336BC"  # violet sunset
-vantablack = "#DCE2E8"  # black and white, soft white
-white = "#E6E1D8"  # white, warm soft white
+catppuccin = "#1E70F5"  # accent #89b4fa, hue kept
+catppuccin-latte = "#1E66F5"  # accent #1e66f5, hue kept
+ethereal = "#2934EA"  # accent #7d82d9, hue kept
+everforest = "#37DCC6"  # accent #7fbbb3, hue kept
+flexoki-light = "#0D6EDE"  # accent #205EA6, hue kept
+gruvbox = "#3CD8B5"  # accent #7daea3, hue kept
+hackerman = "#1CF84B"  # accent #82FB9C, hue kept
+kanagawa = "#2B4FC9"  # indigo wave; the accent is cream
+last-horizon = "#D64831"  # accent #b59790, hue kept
+lumon = "#20A9F4"  # accent #8bc9eb, hue kept
+lupine = "#295DEA"  # accent #3264eb, hue kept
+matte-black = "#E6720A"  # accent #e68e0d, hue kept
+miasma = "#A8A61F"  # accent #78824b, hue kept
+nord = "#358ADE"  # accent #81a1c1, hue kept
+osaka-jade = "#23C77D"  # accent #509475, hue kept
+retro-82 = "#F76316"  # accent #faa968, hue kept
+ristretto = "#ED421F"  # accent #f38d70, hue kept
+rose-pine = "#25B6D0"  # accent #56949f, hue kept
+solitude = "#D6DDE3"  # soft white; the accent is grey
+tokyo-night = "#2264F2"  # accent #7aa2f7, hue kept
+vantablack = "#DCE2E8"  # soft white; the accent is grey
+white = "#E6E1D8"  # soft white; the accent is grey
 
 # User themes in ~/.config/omarchy/themes
-a-building-with-a-flag-on-the-roof-palette = "#2F65D6"  # royal blue night
-aether = "#E31B1B"  # red bat on black
-batman = "#6F7AB7"  # slate-blue clouds
-catppuccin-dark = "#5D8DE0"  # blue-grey forest
-felix = "#FF6225"  # accent orange (wallpaper black)
-fireside = "#F26018"  # campfire orange
-ign-batman-aether = "#4B70C8"  # dark slate blue
-lavender = "#9D4DC3"  # accent lavender (wallpaper grey)
-nebula = "#5A54BA"  # blue night sky
-red-samurai-palette = "#F71D28"  # red sunset
-tokyoled = "#2F6AE8"  # accent blue (wallpaper black)
-tsukiyo = "#3AA0B8"  # teal-blue castle
+a-building-with-a-flag-on-the-roof-palette = "#2681EE"  # accent #378bef, hue kept
+aether = "#F24B21"  # accent #e0755a, hue kept
+batman = "#3963D1"  # accent #737d97, hue kept
+catppuccin-dark = "#1E70F5"  # accent #89b4fa, hue kept
+felix = "#FF4B10"  # accent #ff8852, hue kept
+fireside = "#F26018"  # campfire orange; the accent is grey
+ign-batman-aether = "#3568DF"  # accent #647cb4, hue kept
+lavender = "#8121C6"  # accent #cba6f7, hue kept
+nebula = "#7533B0"  # accent #837698, hue kept
+red-samurai-palette = "#F71D28"  # accent #f72631, hue kept
+tokyoled = "#2264F2"  # accent #7aa2f7, hue kept
+tsukiyo = "#3EB0D5"  # accent #88a4ad, hue kept

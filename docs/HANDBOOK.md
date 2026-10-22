@@ -283,18 +283,24 @@ bypassing the transform, so later changes to `min_saturation` or
 automatic transform for that theme. `config.example.toml` ships overrides for
 the bundled Omarchy themes as a starting point; add one per theme you install.
 
-The shipped values were chosen by looking at each theme's wallpaper: the
-colour that best represents the theme on screen, with the accent as a
-fallback when the wallpaper has no clear hue (for example the all-black ones).
-Kanagawa's accent is cream, but the wallpaper is the Great Wave, so it is
-indigo. Each value has a comment naming what it came from.
+The shipped values follow each theme's own accent (`accent` in its
+`colors.toml`), so the keyboard matches the colour Omarchy highlights on
+screen. Strongly saturated accents are kept; muted ones keep their hue with
+saturation raised to `0.55 + 0.5 x saturation` (at most 0.95) and lightness
+held in 0.46-0.54.
 
 Because the underglow's red gain is 0.66 (§6.3), warm colours drift toward
-green and pinks toward violet there. For warm and purple values, green and
-blue are lowered a little until keys and underglow are both close to the
-intended hue; blues, cyans and greens are used as chosen. Grey themes are soft
-whites. Automatic hue extraction from the wallpapers was tried and rejected: it
-picked the cream sky for Kanagawa, so the choices were made by eye.
+green and purples toward blue there. For those, green and blue are lowered a
+little until keys and underglow are both close to the intended hue; blues,
+cyans and greens are used as chosen.
+
+Exceptions are themes whose accent cannot show on LEDs, where a colour from the
+wallpaper or a soft white is used instead (each has a comment): Kanagawa (cream
+accent, indigo from the Great Wave), Fireside (grey accent, campfire orange) and
+the grey themes White, Vantablack and Solitude. A set based on wallpapers for
+every theme was tried and rejected: it made nine themes disagree with the
+accent the desktop shows, and automatic hue extraction picked Kanagawa's cream
+sky, so the exceptions were chosen by eye.
 
 - Keys use the override scaled by brightness; the underglow still receives
   firmware calibration.
