@@ -16,6 +16,7 @@ Makes the **AULA F75 Max** keyboard's lighting follow your [Omarchy](https://oma
 | `config.example.toml` | `~/.config/omarchy/keyboard-accent/config.toml` | Saturation and lightness limits, per-theme overrides. Not overwritten if it exists. |
 | `plugin/` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | Bar widget (needs `jq`). |
 | `docs/HANDBOOK.md` | | Protocol notes, design, troubleshooting. |
+| `install.sh`, `uninstall.sh` | | Install and remove everything above. Both take `--dry-run`. |
 | `CHANGELOG.md` | | What changed and when. |
 
 Event-driven, no daemon and no polling.
@@ -34,6 +35,16 @@ cd omarchy-aula-f75-max-accent
 omarchy-keyboard-accent apply
 omarchy plugin enable beyond.keyboard-accent && omarchy restart shell
 ```
+
+## Uninstall
+
+```bash
+./uninstall.sh            # removes everything but keeps your config and saved state
+./uninstall.sh --purge    # also removes the config and state
+./uninstall.sh --dry-run  # show what would be removed
+```
+
+It removes the scripts, hooks, plugin, udev rule and systemd unit. The `aula` group is left in place (`sudo groupdel aula` removes it). Run `omarchy restart shell` afterwards to drop the bar widget.
 
 ## Use
 
