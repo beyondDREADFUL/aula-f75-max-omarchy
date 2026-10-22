@@ -65,43 +65,49 @@ match_direct_zone = false
 # transform that may be retuned later.  These bypass min_saturation/
 # max_lightness and use the hex as-is.  Keys use this value (scaled by
 # brightness); the underglow is still calibrated by the firmware.  Keys are
-# theme slugs, not display names.  Most values are the transform's vetted
-# output; the ones marked "hand-tuned" replace a hue that did not suit the
-# palette.  Re-run this list when you add or remove a theme.
+# theme slugs, not display names.
+#
+# How the values were chosen: each follows the theme's own accent colour
+# (accent in the theme's colors.toml).  Strongly saturated accents are kept
+# as they are.  Muted accents keep their hue with saturation raised to
+# 0.55 + 0.5 x the accent's saturation (at most 0.95) and lightness held in
+# 0.46-0.54, so they stay recognisable but still show on the LEDs.  Grey
+# accents (white, vantablack, fireside, solitude) are soft whites.
+# Re-run this list when you add or remove a theme.
 # Bundled Omarchy themes
-catppuccin-latte = "#8839EF"  # brand colour, kept from before
 catppuccin = "#1E70F5"
-ethereal = "#202CF3"
-everforest = "#20F3D7"
-flexoki-light = "#0A5CBC"
-gruvbox = "#E8891A"  # hand-tuned
+catppuccin-latte = "#1E66F5"
+ethereal = "#2934EA"
+everforest = "#37DCC6"
+flexoki-light = "#0D6EDE"
+gruvbox = "#3CD8B5"
 hackerman = "#1CF84B"
-kanagawa = "#F3D420"
-last-horizon = "#F34820"
-lumon = "#20A8F3"
+kanagawa = "#DDC536"
+last-horizon = "#D65A3D"
+lumon = "#20A9F4"
 lupine = "#2059F3"
 matte-black = "#E78E0C"
-miasma = "#A1C30A"
-nord = "#88C0D0"  # brand colour, kept from before
-osaka-jade = "#0BD97B"
+miasma = "#A8C625"
+nord = "#358ADE"
+osaka-jade = "#23C77D"
 retro-82 = "#F77E1C"
 ristretto = "#F34F20"
-rose-pine = "#E58FA8"  # hand-tuned
-solitude = "#6E93C4"  # hand-tuned
+rose-pine = "#25B6D0"
+solitude = "#D6DDE3"
 tokyo-night = "#2064F3"
-vantablack = "#8FA6B8"  # hand-tuned
-white = "#E6E1D8"  # hand-tuned
+vantablack = "#DCE2E8"
+white = "#E6E1D8"
 
 # User themes in ~/.config/omarchy/themes
 a-building-with-a-flag-on-the-roof-palette = "#2081F3"
-aether = "#F34B20"
-batman = "#1754F3"
+aether = "#F24B21"
+batman = "#3963D1"
 catppuccin-dark = "#1E70F5"
 felix = "#FF5E14"
-fireside = "#F09A28"  # hand-tuned
-ign-batman-aether = "#205FF3"
+fireside = "#E8E2D4"
+ign-batman-aether = "#3568DF"
 lavender = "#8120F3"
-nebula = "#6E1BF3"
+nebula = "#753CD2"
 red-samurai-palette = "#F71D28"
 tokyoled = "#2064F3"
-tsukiyo = "#20C0F3"
+tsukiyo = "#3EB0D5"

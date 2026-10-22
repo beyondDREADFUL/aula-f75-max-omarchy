@@ -283,6 +283,12 @@ bypassing the transform, so later changes to `min_saturation` or
 automatic transform for that theme. `config.example.toml` ships overrides for
 the bundled Omarchy themes as a starting point; add one per theme you install.
 
+The shipped values follow each theme's own accent (`accent` in its
+`colors.toml`): strongly saturated accents are kept as they are, muted accents
+keep their hue with saturation raised to `0.55 + 0.5 x saturation` (at most
+0.95) and lightness held in 0.46-0.54, and grey accents become soft whites.
+That keeps muted themes recognisable instead of turning them neon.
+
 - Keys use the override scaled by brightness; the underglow still receives
   firmware calibration.
 - Near-neutral overrides (white, grey-blue) get a cooler underglow than their
