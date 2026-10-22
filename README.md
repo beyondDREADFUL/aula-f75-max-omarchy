@@ -2,6 +2,8 @@
 
 Makes the **AULA F75 Max** keyboard's lighting follow your [Omarchy](https://omarchy.org) theme accent, on the wired USB connection and on the 2.4 GHz dongle. Includes an optional bar widget to see and change the colour.
 
+![Bar widget popup](docs/popup.png)
+
 **This only works with the AULA F75 Max.** It talks to the keyboard's own HID protocol (wired `0c45:800a`, dongle `05ac:024f`). Other keyboards use different protocols, so they would need a different controller. The bar widget is a thin front end over the controller's CLI.
 
 ## What's in it
