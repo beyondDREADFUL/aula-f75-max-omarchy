@@ -70,10 +70,33 @@ wireless_color_order = "rgb"
 match_direct_zone = false
 
 [theme_overrides]
-# Optional.  An entry pins a colour to a theme slug and is used as-is,
-# bypassing the automatic choice above.  Most themes need none: the automatic
-# choice follows the theme's accent.  These two are here because their accents
-# (cream, grey) cannot show on LEDs, so the colour comes from the wallpaper.
-# Add a line for any theme whose automatic colour you want to change.
-kanagawa = "#2B4FC9"  # indigo from the Great Wave; the accent is cream
-fireside = "#F27A1E"  # campfire orange; the accent is grey
+# An entry pins a colour to a theme slug and is used as-is, bypassing the
+# automatic choice above.  The bundled Omarchy themes are listed so their
+# colours stay fixed; each equals the automatic choice except Kanagawa, whose
+# accent is cream.  Add a line for any other theme, or change one to taste.
+# Bundled Omarchy themes
+catppuccin = "#1E70F5"  # accent #89b4fa, hue kept
+catppuccin-latte = "#1E66F5"  # accent #1e66f5, hue kept
+ethereal = "#2934EA"  # accent #7d82d9, hue kept
+everforest = "#37DCC6"  # accent #7fbbb3, hue kept
+flexoki-light = "#0D6EDE"  # accent #205EA6, hue kept
+gruvbox = "#3CD8B5"  # accent #7daea3, hue kept
+hackerman = "#1CF84B"  # accent #82FB9C, hue kept
+kanagawa = "#2B4FC9"  # indigo wave; the accent is cream
+last-horizon = "#D64831"  # accent #b59790, hue kept
+lumon = "#20A9F4"  # accent #8bc9eb, hue kept
+lupine = "#295DEA"  # accent #3264eb, hue kept
+matte-black = "#E6720A"  # accent #e68e0d, hue kept
+miasma = "#A8A61F"  # accent #78824b, hue kept
+nord = "#358ADE"  # accent #81a1c1, hue kept
+osaka-jade = "#23C77D"  # accent #509475, hue kept
+retro-82 = "#F76316"  # accent #faa968, hue kept
+ristretto = "#ED421F"  # accent #f38d70, hue kept
+rose-pine = "#25B6D0"  # accent #56949f, hue kept
+solitude = "#D6DDE3"  # soft white; the accent is grey
+tokyo-night = "#2264F2"  # accent #7aa2f7, hue kept
+vantablack = "#DCE2E8"  # soft white; the accent is grey
+white = "#E6E1D8"  # soft white; the accent is grey
+
+# Not bundled: the accent is grey, so the colour comes from the wallpaper.
+fireside = "#F26018"  # campfire orange; the accent is grey

@@ -283,7 +283,7 @@ bypassing the automatic choice, so later changes to the `[color]` settings
 cannot alter a pinned theme. Delete a line to fall back to the
 automatic transform for that theme. The automatic choice reproduces the
 hand-picked set for 29 of the 34 bundled themes, so `config.example.toml` only
-ships the two that need the wallpaper (Kanagawa, Fireside).
+ships the bundled themes (plus Fireside), only Kanagawa and Fireside needing the wallpaper.
 
 The shipped values follow each theme's own accent (`accent` in its
 `colors.toml`), so the keyboard matches the colour Omarchy highlights on

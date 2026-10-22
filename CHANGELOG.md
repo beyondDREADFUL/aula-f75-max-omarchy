@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-10-22 (latest)
-- The automatic colour choice now reproduces the hand-picked set for 29 of 34 themes: grey/pale accents become a soft white, muted accents get a saturation lift, and green/blue are rebalanced for the underglow. `[color]` gains `saturation_floor`, `saturation_gain`, `underglow_correction` (`min_saturation` removed; `min_lightness` is now 0.46). The example config only ships overrides for Kanagawa and Fireside, which depend on the wallpaper.
+- The automatic colour choice now reproduces the hand-picked set for 29 of 34 themes: grey/pale accents become a soft white, muted accents get a saturation lift, and green/blue are rebalanced for the underglow. `[color]` gains `saturation_floor`, `saturation_gain`, `underglow_correction` (`min_saturation` removed; `min_lightness` is now 0.46). The example config ships overrides for the bundled Omarchy themes (plus Fireside) so the colours stay fixed; only Kanagawa and Fireside depend on the wallpaper.
 
 ## 2026-10-22 (later)
 - Theme overrides reworked. They follow each theme's own accent so the keyboard matches the desktop, with warm and purple values corrected for the underglow's weak red so they no longer drift to green or blue. Exceptions where the accent cannot show on LEDs: Kanagawa (indigo from the wallpaper), Fireside (campfire orange) and the grey themes (soft whites).
