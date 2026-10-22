@@ -51,7 +51,7 @@ It removes the scripts, hooks, plugin, udev rule and systemd unit. The `aula` gr
 ```bash
 omarchy-keyboard-accent status
 omarchy-keyboard-accent apply --color '#FF0000'          # until next theme change
-omarchy-keyboard-accent apply --exact --color '#FFFFFF'  # skip the vividness transform
+omarchy-keyboard-accent apply --exact --color '#FFFFFF'  # use the colour as written
 omarchy-keyboard-accent apply --pin --color '#FF0000'    # keep it across theme changes
 omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the theme colour
 ```

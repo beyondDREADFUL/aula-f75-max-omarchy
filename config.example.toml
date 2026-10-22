@@ -14,21 +14,30 @@
 # Follow the active Omarchy theme's accent.
 mode = "theme"
 
-# Used only when mode = "fixed".  Still passes through min_saturation and
-# max_lightness, exactly like a theme accent.
+# Used only when mode = "fixed".  Still goes through the automatic colour choice
+# below, exactly like a theme accent.
 fixed_color = "#F34820"
 
-# Saturation floor.  Theme accents are often muted warm greys; a floor of
-# 0.90 turns Last Horizon's #b59790 into a clearly visible coral instead of
-# a near-white.  Set lower for a softer look, higher for more punch.
-min_saturation = 0.90
-
-# Lightness range.  The upper bound keeps light pastel accents from washing
-# out; the lower bound keeps very dark accents visible.  The LED diffuser
-# makes the keys read lighter than the source colour, so this is set a
-# little below the monitor swatch to compensate.
+# How the automatic colour is chosen for a theme accent that has no entry in
+# the overrides table at the bottom (and for --color without --exact, and
+# fixed_color):
+#   - saturated accents (saturation 0.80 or more) are kept;
+#   - muted accents keep their hue, with saturation lifted to
+#     saturation_floor + saturation_gain x their saturation, at most 0.95;
+#   - grey and pale accents (such as cream) become a soft white;
+#   - lightness is held between min_lightness and max_lightness.  The LED
+#     diffuser makes keys read lighter than the monitor swatch, so the upper
+#     bound sits a little below it.
+saturation_floor = 0.55
+saturation_gain = 0.5
 max_lightness = 0.54
-min_lightness = 0.35
+min_lightness = 0.46
+
+# The underglow's firmware cuts red to about two thirds, which drags warm
+# colours toward green and purples toward blue.  When true, green and blue are
+# lowered a little for those colours so keys and underglow both stay close to
+# the intended hue.
+underglow_correction = true
 
 [device]
 # "auto" detects either the wired 0xFF13 command interface (0c45:800a)
@@ -61,56 +70,10 @@ wireless_color_order = "rgb"
 match_direct_zone = false
 
 [theme_overrides]
-# One explicit colour per installed theme, so the keyboard never depends on a
-# transform that may be retuned later.  These bypass min_saturation/
-# max_lightness and use the hex as-is.  Keys use this value (scaled by
-# brightness); the underglow is still calibrated by the firmware.  Keys are
-# theme slugs, not display names.
-#
-# How the values were chosen: each follows the theme's own accent (accent in
-# its colors.toml), so the keyboard matches the colour Omarchy highlights on
-# screen.  Strongly saturated accents are kept; muted ones keep their hue with
-# saturation raised to 0.55 + 0.5 x the accent's saturation (at most 0.95) and
-# lightness held in 0.46-0.54.  The underglow's firmware gain cuts red to about
-# two thirds, which drags warm colours toward green and purples toward blue, so
-# for those green and blue are lowered a little until keys and underglow are
-# both close to the intended hue.  Exceptions, where the accent cannot show on
-# LEDs (cream or grey), use a colour from the wallpaper or a soft white; the
-# comment says which.  Re-run this list when you add or remove a theme.
-# Bundled Omarchy themes
-catppuccin = "#1E70F5"  # accent #89b4fa, hue kept
-catppuccin-latte = "#1E66F5"  # accent #1e66f5, hue kept
-ethereal = "#2934EA"  # accent #7d82d9, hue kept
-everforest = "#37DCC6"  # accent #7fbbb3, hue kept
-flexoki-light = "#0D6EDE"  # accent #205EA6, hue kept
-gruvbox = "#3CD8B5"  # accent #7daea3, hue kept
-hackerman = "#1CF84B"  # accent #82FB9C, hue kept
-kanagawa = "#2B4FC9"  # indigo wave; the accent is cream
-last-horizon = "#D64831"  # accent #b59790, hue kept
-lumon = "#20A9F4"  # accent #8bc9eb, hue kept
-lupine = "#295DEA"  # accent #3264eb, hue kept
-matte-black = "#E6720A"  # accent #e68e0d, hue kept
-miasma = "#A8A61F"  # accent #78824b, hue kept
-nord = "#358ADE"  # accent #81a1c1, hue kept
-osaka-jade = "#23C77D"  # accent #509475, hue kept
-retro-82 = "#F76316"  # accent #faa968, hue kept
-ristretto = "#ED421F"  # accent #f38d70, hue kept
-rose-pine = "#25B6D0"  # accent #56949f, hue kept
-solitude = "#D6DDE3"  # soft white; the accent is grey
-tokyo-night = "#2264F2"  # accent #7aa2f7, hue kept
-vantablack = "#DCE2E8"  # soft white; the accent is grey
-white = "#E6E1D8"  # soft white; the accent is grey
-
-# User themes in ~/.config/omarchy/themes
-a-building-with-a-flag-on-the-roof-palette = "#2681EE"  # accent #378bef, hue kept
-aether = "#F24B21"  # accent #e0755a, hue kept
-batman = "#3963D1"  # accent #737d97, hue kept
-catppuccin-dark = "#1E70F5"  # accent #89b4fa, hue kept
-felix = "#FF4B10"  # accent #ff8852, hue kept
-fireside = "#F26018"  # campfire orange; the accent is grey
-ign-batman-aether = "#3568DF"  # accent #647cb4, hue kept
-lavender = "#8121C6"  # accent #cba6f7, hue kept
-nebula = "#7533B0"  # accent #837698, hue kept
-red-samurai-palette = "#F71D28"  # accent #f72631, hue kept
-tokyoled = "#2264F2"  # accent #7aa2f7, hue kept
-tsukiyo = "#3EB0D5"  # accent #88a4ad, hue kept
+# Optional.  An entry pins a colour to a theme slug and is used as-is,
+# bypassing the automatic choice above.  Most themes need none: the automatic
+# choice follows the theme's accent.  These two are here because their accents
+# (cream, grey) cannot show on LEDs, so the colour comes from the wallpaper.
+# Add a line for any theme whose automatic colour you want to change.
+kanagawa = "#2B4FC9"  # indigo from the Great Wave; the accent is cream
+fireside = "#F27A1E"  # campfire orange; the accent is grey

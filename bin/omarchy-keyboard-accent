@@ -111,10 +111,27 @@ WIRELESS_REPORT_LEN = 32
 CHANNEL_GAIN = (0.6575, 0.9911, 0.9885)
 BRIGHTNESS_SCALE = (0.1805, 0.3750, 0.6598, 0.7848, 1.0000)
 
+# Automatic colour choice for accents without a [theme_overrides] entry.
+# Saturated accents (>= KEEP_SATURATION) are kept; muted ones keep their hue
+# with saturation lifted to floor + gain * saturation, at most MAX_SATURATION.
+# Near-grey accents (< NEUTRAL_BELOW) and pale, low-saturation ones such as
+# cream become a soft white that keeps their hue, warm when the accent has none.
+KEEP_SATURATION = 0.80
+MAX_SATURATION = 0.95
+NEUTRAL_BELOW = 0.12
+ACHROMATIC_BELOW = 0.05
+PALE_LIGHTNESS = 0.75
+PALE_SATURATION = 0.50
+SOFT_WHITE_LIGHTNESS = 0.88
+SOFT_WHITE_SATURATION = 0.22
+WARM_HUE = 40 / 360
+
 DEFAULT_CONFIG = {
-    "min_saturation": 0.90,
+    "saturation_floor": 0.55,
+    "saturation_gain": 0.5,
+    "underglow_correction": True,
     "max_lightness": 0.54,
-    "min_lightness": 0.35,
+    "min_lightness": 0.46,
     "device": DEFAULT_DEVICE,
     "device_prefer": "auto",
     "default_brightness": 5,
@@ -203,9 +220,11 @@ def load_config() -> dict:
     lighting = data.get("lighting", {})
     overrides = data.get("theme_overrides", {})
 
-    for key in ("min_saturation", "max_lightness", "min_lightness"):
+    for key in ("saturation_floor", "saturation_gain", "max_lightness", "min_lightness"):
         if key in color:
             config[key] = float(color[key])
+    if "underglow_correction" in color:
+        config["underglow_correction"] = bool(color["underglow_correction"])
     if "mode" in color:
         config["color_mode"] = str(color["mode"])
     if "fixed_color" in color:
@@ -233,7 +252,8 @@ def load_config() -> dict:
     elif overrides:
         log("theme_overrides must be a TOML table; ignoring")
 
-    config["min_saturation"] = min(max(config["min_saturation"], 0.0), 1.0)
+    config["saturation_floor"] = min(max(config["saturation_floor"], 0.0), 1.0)
+    config["saturation_gain"] = min(max(config["saturation_gain"], 0.0), 1.0)
     config["max_lightness"] = min(max(config["max_lightness"], 0.0), 1.0)
     config["min_lightness"] = min(max(config["min_lightness"], 0.0), config["max_lightness"])
     config["default_brightness"] = min(max(config["default_brightness"], 1), 5)
@@ -897,27 +917,64 @@ def resolve_target(
     return target, accent, source, hsl, chroma
 
 
+def _hue_degrees(rgb) -> float:
+    return colorsys.rgb_to_hsv(*(channel / 255.0 for channel in rgb))[0] * 360
+
+
+def _hue_distance(a: float, b: float) -> float:
+    delta = abs(a - b) % 360
+    return min(delta, 360 - delta)
+
+
+def balance_for_underglow(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Lower green and blue until keys and underglow are both near the intended hue.
+
+    The underglow's firmware gain cuts red to about two thirds, which drags warm
+    colours toward green and purples toward blue.  The keys show the colour as
+    written, so the compromise puts the keys and the underglow about equally far
+    from the intended hue.  Colours the gain barely moves are returned unchanged.
+    """
+    hue = _hue_degrees(rgb)
+    if colorsys.rgb_to_hsv(*(channel / 255.0 for channel in rgb))[1] < 0.15:
+        return rgb
+    glow = tuple(rgb[i] * CHANNEL_GAIN[i] for i in range(3))
+    if _hue_distance(_hue_degrees(glow), hue) <= 8:
+        return rgb
+    best = None
+    for step in range(36):
+        weight = 1 - step * 0.01
+        keys = (rgb[0], rgb[1] * weight, rgb[2] * weight)
+        glow = tuple(keys[i] * CHANNEL_GAIN[i] for i in range(3))
+        error = max(_hue_distance(_hue_degrees(keys), hue), _hue_distance(_hue_degrees(glow), hue))
+        if best is None or error < best[0] - 0.5:
+            best = (error, keys)
+    return best[1]  # type: ignore[index]
+
+
 def vivid(rgb: tuple[int, int, int], config: dict) -> tuple[tuple[int, int, int], tuple[float, float, float], int]:
-    """Raise saturation to the floor and clamp lightness for visible LEDs."""
+    """Turn a theme accent into a colour that reads well on the keyboard LEDs."""
     red, green, blue = (channel / 255.0 for channel in rgb)
     hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
 
-    if saturation < 0.05:
-        # A near-white accent has no meaningful hue.  Use a warm coral rather
-        # than letting colorsys fall back to pure red.
-        hue = 0.03
+    if saturation < NEUTRAL_BELOW or (lightness > PALE_LIGHTNESS and saturation < PALE_SATURATION):
+        if saturation < ACHROMATIC_BELOW:
+            # No meaningful hue; colorsys would fall back to pure red.
+            hue = WARM_HUE
+        lightness, saturation = SOFT_WHITE_LIGHTNESS, SOFT_WHITE_SATURATION
+    else:
+        if saturation < KEEP_SATURATION:
+            saturation = min(
+                MAX_SATURATION,
+                config["saturation_floor"] + config["saturation_gain"] * saturation,
+            )
+        lightness = min(max(lightness, config["min_lightness"]), config["max_lightness"])
 
-    saturation = max(saturation, config["min_saturation"])
-    lightness = min(max(lightness, config["min_lightness"]), config["max_lightness"])
-
-    out_r, out_g, out_b = colorsys.hls_to_rgb(hue, lightness, saturation)
-    target = (
-        max(0, min(255, round(out_r * 255))),
-        max(0, min(255, round(out_g * 255))),
-        max(0, min(255, round(out_b * 255))),
-    )
+    out = tuple(channel * 255 for channel in colorsys.hls_to_rgb(hue, lightness, saturation))
+    if config["underglow_correction"]:
+        out = balance_for_underglow(out)  # type: ignore[assignment]
+    target = tuple(max(0, min(255, round(channel))) for channel in out)
     chroma = max(target) - min(target)
-    return target, (hue, lightness, saturation), chroma
+    return target, (hue, lightness, saturation), chroma  # type: ignore[return-value]
 
 
 def scale_rgb(rgb: tuple[int, int, int], brightness: int) -> tuple[int, int, int]:
@@ -1360,8 +1417,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         f"S={saturation:.3f} chroma={chroma}"
     )
     print(
-        f"config: min_saturation={config['min_saturation']:.2f} "
-        f"max_lightness={config['max_lightness']:.2f} "
+        f"config: saturation_floor={config['saturation_floor']:.2f} "
+        f"saturation_gain={config['saturation_gain']:.2f} "
+        f"lightness={config['min_lightness']:.2f}-{config['max_lightness']:.2f} "
+        f"underglow_correction={config['underglow_correction']} "
         f"match_direct_zone={config['match_direct_zone']} "
         f"wireless_color_order={config['wireless_color_order']} "
         f"theme_overrides={len(config.get('theme_overrides', {}))}"

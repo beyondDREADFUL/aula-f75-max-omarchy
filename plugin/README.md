@@ -15,8 +15,8 @@ Omarchy bar widget for the AULA F75 Max accent colour, built on
 
 A colour picked here is sent exactly as chosen
 (`omarchy-keyboard-accent apply --exact --color HEX`). Theme accents that have
-no override in the config still get the controller's saturation and lightness
-limits, which keep muted accents vivid.
+no override in the config still get the controller's automatic choice, which keeps
+muted accents vivid and turns grey ones into a soft white.
 
 The underglow is calibrated by the keyboard firmware separately and cannot be
 set exactly. Pure white keys come with a cyan-tinted underglow.

@@ -216,27 +216,28 @@ failed page-0 read. This is the original conservative order:
    `~/.local/state/omarchy/keyboard-accent/pin.json`) replaces the theme accent
    on every plain `apply`: theme change, login, hotplug. `unpin` clears it.
    `apply --color` without `--pin` is a one-off and does not touch the pin.
-1. `apply --color HEX` — explicit one-off colour; goes through the transform
-   unless `--exact` is given, which uses the colour as written
-   (`accent_source` becomes `override-exact`). The widget's "Exact colour"
-   switch maps to this.
+1. `apply --color HEX` — explicit one-off colour; with `--exact` it is used as
+   written (`accent_source` becomes `override-exact`), as the widget does.
 2. `[color] mode = "fixed"` — `fixed_color` replaces the theme accent, and is
-   then put through the **same transform** as step 1. `min_saturation` and
-   `max_lightness` therefore still apply in this mode.
+   then put through the **same transform** as step 1. The saturation and
+   lightness settings therefore still apply in this mode.
 3. Otherwise the active theme's `accent` from
    `~/.local/state/omarchy/current/theme/colors.toml`, also transformed.
 4. Exception: if the theme slug has a `[theme_overrides]` entry, that hex is
    used **verbatim** and the transform is skipped (`accent_source` becomes
    `theme_override:<slug>`). This is the only path that bypasses
-   `min_saturation`/`max_lightness`.
+   the automatic choice.
 
 ### 6.2 HSL transform (`vivid`)
 
-- Hue preserved; near-grey accents (saturation < 0.05) get hue `0.03`
-  (warm coral) because colorsys would otherwise fall back to pure red.
-- Saturation raised to `min_saturation` (0.90).
-- Lightness clamped to `[0.35, 0.54]` — the diffuser reads lighter than the
-  monitor swatch.
+- Neutral or pale accents (saturation < 0.12, or light and washed out) become
+  a soft white that keeps the hue (warm 40 degrees if fully grey).
+- Otherwise saturation is kept if already >= 0.80, else raised to
+  `saturation_floor + saturation_gain x saturation` (at most 0.95).
+- Lightness is clamped to `[min_lightness, max_lightness]` (0.46-0.54).
+- With `underglow_correction`, green and blue are scaled down a little (weight
+  1.0 to 0.65) so keys and underglow are both near the intended hue; skipped
+  for low saturation or a hue shift of 8 degrees or less.
 - The result is the *target*; keys use it directly (scaled by brightness),
   the underglow gets firmware calibration on top.
 
@@ -278,10 +279,11 @@ corrected from software.
 ### 6.4 Per-theme overrides
 
 `[theme_overrides]` pins a hex colour to a theme slug. It is used verbatim,
-bypassing the transform, so later changes to `min_saturation` or
-`max_lightness` cannot alter a pinned theme. Delete a line to fall back to the
-automatic transform for that theme. `config.example.toml` ships overrides for
-the bundled Omarchy themes as a starting point; add one per theme you install.
+bypassing the automatic choice, so later changes to the `[color]` settings
+cannot alter a pinned theme. Delete a line to fall back to the
+automatic transform for that theme. The automatic choice reproduces the
+hand-picked set for 29 of the 34 bundled themes, so `config.example.toml` only
+ships the two that need the wallpaper (Kanagawa, Fireside).
 
 The shipped values follow each theme's own accent (`accent` in its
 `colors.toml`), so the keyboard matches the colour Omarchy highlights on
@@ -471,9 +473,11 @@ reliable, then set with margin. Raise them if verification starts failing.
 |---|---|---|
 | `color.mode` | `theme` | follow the active theme (`fixed` uses `fixed_color`) |
 | `color.fixed_color` | `#F34820` | replaces the accent when `mode = "fixed"`; still transformed |
-| `color.min_saturation` | `0.90` | saturation floor for the transform |
+| `color.saturation_floor` | `0.55` | base saturation for muted accents |
+| `color.saturation_gain` | `0.5` | added per unit of the accent's own saturation |
+| `color.underglow_correction` | `true` | rebalance green/blue so keys and underglow agree |
 | `color.max_lightness` | `0.54` | upper lightness clamp |
-| `color.min_lightness` | `0.35` | lower lightness clamp |
+| `color.min_lightness` | `0.46` | lower lightness clamp |
 | `device.path` | `auto` | auto-detect wired or dongle; or set a by-id path |
 | `device.prefer` | `auto` | when both are present: `auto`/`wired` picks wired; use `wireless` while charging |
 | `lighting.default_brightness` | `5` | only used before a live level is known |
@@ -499,10 +503,10 @@ omarchy-keyboard-accent apply --verify
 # show what would be applied, without touching the keyboard
 omarchy-keyboard-accent apply --dry-run
 
-# one-off colour (runs the saturation/lightness transform)
+# one-off colour (applied exactly with --exact)
 omarchy-keyboard-accent apply --color '#00A0FF' --verify
 
-# one-off colour exactly as written, no transform (white stays white)
+# one-off colour exactly as written, (white stays white)
 omarchy-keyboard-accent apply --exact --color '#FFFFFF'
 
 # keep a colour across theme changes and reconnects
@@ -540,7 +544,7 @@ $ omarchy-keyboard-accent status
 theme: last-horizon (~/.local/state/omarchy/current/theme)
 accent: #F34820 (theme_override:last-horizon)
 target: #F34820 H=11.4 L=0.539 S=0.898 chroma=211
-config: min_saturation=0.90 max_lightness=0.54 match_direct_zone=False wireless_color_order=rgb theme_overrides=34
+config: saturation_floor=0.55 saturation_gain=0.5 lightness=0.46-0.54 underglow_correction=True match_direct_zone=False wireless_color_order=rgb theme_overrides=34
 device: auto (prefer=auto)
 state: brightness=5 transport=wired path=/dev/input/by-id/usb-SONiX_AULA_F75Max-if03-hidraw effect=83 direct=61 target=#F34820 mode=static+direct
 ```
@@ -688,7 +692,7 @@ match the theme. If red and blue are swapped, set
 ### New theme has the wrong colour
 
 - Add/remove a line in `[theme_overrides]`. Without a line the automatic
-  transform applies.
+  choice applies.
 - Check the slug with `ls ~/.local/state/omarchy/current/` after switching, or
   `basename` of the theme directory.
 
@@ -715,10 +719,10 @@ match the theme. If red and blue are swapped, set
 
 - **Add a theme**: add `slug = "#RRGGBB"` under `[theme_overrides]`; pick the
   colour from the theme's accent or by hand.
-- **Remove a theme**: delete its line; the transform takes over again.
+- **Remove a theme**: delete its line; the automatic choice takes over again.
 - **Retune the look globally**: overrides are pinned, so change them
-  individually; `min_saturation`/`max_lightness` only affect `--color`,
-  `mode="fixed"`, and themes without an override.
+  individually; the `[color]` settings only affect `mode="fixed"` and themes
+  without an override.
 - **Firmware update**: re-run `apply --verify`; if it fails, restore the
   conservative pacing and re-test. Protocol commands are unlikely to change,
   but pacing and calibration may.
@@ -752,10 +756,8 @@ match the theme. If red and blue are swapped, set
 - **The fast path assumes the zone partition is complete** (83 + 61 = 144).
   If a future firmware exposes a different split, the controller falls back
   to the read-based order automatically.
-- **Exact colour is the widget default, opt-in on the CLI.** The transform keeps
-  theme accents vivid but tints neutrals (white becomes gold), so the widget
-  always sends `--exact`, and the CLI offers it as a flag. Underglow is
-  firmware-calibrated either way and cannot be set exactly.
+- **Picked colours are always applied exactly.** The widget sends `--exact`;
+  underglow is firmware-calibrated either way and cannot be set exactly.
 - **The widget polls nothing.** It refreshes on load, when the picker opens,
   after each action, and 2.5 s after the shell's accent changes.
 - **`verified=n/a` on wireless** is expected, not an error.
