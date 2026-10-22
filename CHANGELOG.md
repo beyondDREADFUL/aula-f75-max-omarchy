@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-10-22 (later)
-- Theme overrides reworked to follow each theme's own accent: muted accents keep their character instead of becoming neon, grey accents are soft whites, and overrides that used an unrelated hue (Gruvbox, Rose Pine, Nord, Catppuccin Latte, Fireside) now follow the accent.
+- Theme overrides reworked twice. They now represent each theme's wallpaper (accent as fallback), with warm and purple values corrected for the underglow's weak red so they no longer drift to green or blue (Kanagawa is indigo, not yellow).
 - Investigated animated theme changes (cross-fade, per-key wave, firmware modes); not adopted. Findings are in the handbook (section 19).
 - Pinned colours: `apply --pin --color HEX` keeps a colour across theme changes,
   login and reconnects until `unpin`. The widget has a Keep this colour switch.

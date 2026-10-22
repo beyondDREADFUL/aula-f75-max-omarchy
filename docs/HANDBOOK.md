@@ -283,11 +283,18 @@ bypassing the transform, so later changes to `min_saturation` or
 automatic transform for that theme. `config.example.toml` ships overrides for
 the bundled Omarchy themes as a starting point; add one per theme you install.
 
-The shipped values follow each theme's own accent (`accent` in its
-`colors.toml`): strongly saturated accents are kept as they are, muted accents
-keep their hue with saturation raised to `0.55 + 0.5 x saturation` (at most
-0.95) and lightness held in 0.46-0.54, and grey accents become soft whites.
-That keeps muted themes recognisable instead of turning them neon.
+The shipped values were chosen by looking at each theme's wallpaper: the
+colour that best represents the theme on screen, with the accent as a
+fallback when the wallpaper has no clear hue (for example the all-black ones).
+Kanagawa's accent is cream, but the wallpaper is the Great Wave, so it is
+indigo. Each value has a comment naming what it came from.
+
+Because the underglow's red gain is 0.66 (§6.3), warm colours drift toward
+green and pinks toward violet there. For warm and purple values, green and
+blue are lowered a little until keys and underglow are both close to the
+intended hue; blues, cyans and greens are used as chosen. Grey themes are soft
+whites. Automatic hue extraction from the wallpapers was tried and rejected: it
+picked the cream sky for Kanagawa, so the choices were made by eye.
 
 - Keys use the override scaled by brightness; the underglow still receives
   firmware calibration.
