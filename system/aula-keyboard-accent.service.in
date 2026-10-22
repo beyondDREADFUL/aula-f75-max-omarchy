@@ -1,0 +1,13 @@
+[Unit]
+Description=Apply Omarchy theme accent to AULA F75 Max
+After=local-fs.target
+ConditionPathExists=@HOME@/.local/bin/omarchy-keyboard-accent
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@GROUP@
+SupplementaryGroups=aula
+Environment=HOME=@HOME@
+WorkingDirectory=@HOME@
+ExecStart=@HOME@/.local/bin/omarchy-keyboard-accent apply

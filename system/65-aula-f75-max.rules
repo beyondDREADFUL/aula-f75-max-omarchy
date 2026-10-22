@@ -1,0 +1,19 @@
+# AULA F75 Max RGB control interface (MI_03 / usage page 0xFF13).
+# Only the interface with ID_USB_INTERFACE_NUM=03 is exposed; keyboard input
+# interfaces are not touched.  This rule runs after 60-persistent-hidraw.rules
+# so those ID_* properties are already populated.  GROUP/MODE give the desktop
+# user session-independent access.  The systemd tag starts a one-shot apply
+# service when the device appears or changes.
+ACTION=="add|change", SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", ENV{ID_USB_INTERFACE_NUM}=="03", GROUP="aula", MODE="0660", TAG+="uaccess", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
+
+# AULA F75 Max 2.4 GHz dongle.  It exposes several hidraw nodes; the
+# controller finds the command channel by its usage page (0xFF60) and ignores
+# the keyboard/mouse/consumer endpoints.  Duplicate service starts are harmless
+# because the controller serialises applies with a lock.
+ACTION=="add|change", SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="024f", GROUP="aula", MODE="0660", TAG+="uaccess", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
+
+# When one transport disappears, re-run the apply so the remaining transport
+# (for example the dongle after unplugging the USB cable) gets the theme.
+# These are event-driven one-shot starts, not polling.
+ACTION=="remove", SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
+ACTION=="remove", SUBSYSTEM=="hidraw", KERNEL=="hidraw*", ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="024f", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"

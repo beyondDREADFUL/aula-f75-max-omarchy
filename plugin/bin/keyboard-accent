@@ -1,0 +1,107 @@
+#!/bin/bash
+# Helper for the Keyboard Accent bar widget. Wraps omarchy-keyboard-accent.
+# Every command prints one line of JSON, so the widget needs no exit codes.
+#
+#   status                      theme, keyboard colour, whether they match
+#   targets [--exact] #HEX...   colour the keys would show for each, no writes
+#   preview [--exact] #HEX      same for a single colour
+#   apply   [--exact] #HEX      set the keyboard (until the next theme change)
+#   reset                       return the keyboard to the theme colour
+#
+# --exact uses the colour as written. Without it the controller applies the
+# theme's saturation and lightness limits, which tint neutrals such as white.
+
+set -u
+
+CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
+STATE="$HOME/.local/state/omarchy/keyboard-accent/state.json"
+
+fail() {
+    jq -nc --arg error "$1" '{ok: false, error: $error}'
+    exit 1
+}
+
+valid_hex() { [[ ${1:-} =~ ^#[0-9A-Fa-f]{6}$ ]]; }
+
+# Sum of per-channel differences between two #RRGGBB colours.
+hex_distance() {
+    local a=${1#\#} b=${2#\#} total=0 i diff
+    for i in 0 2 4; do
+        diff=$((16#${a:i:2} - 16#${b:i:2}))
+        total=$((total + (diff < 0 ? -diff : diff)))
+    done
+    echo "$total"
+}
+
+# What the keys would show for a colour, via the controller's dry run.
+dry_target() {
+    "$CONTROLLER" apply --dry-run ${exact[@]+"${exact[@]}"} --color "$1" 2>/dev/null \
+        | grep -oE 'target=#[0-9A-Fa-f]{6}' | head -n 1 | cut -d= -f2
+}
+
+command=${1:-}
+[ $# -gt 0 ] && shift
+
+exact=()
+if [ "${1:-}" = "--exact" ]; then
+    exact=(--exact)
+    shift
+fi
+
+case "$command" in
+status)
+    theme=$("$CONTROLLER" status 2>/dev/null | awk '/^target:/ {print $2}')
+    [ -n "$theme" ] || fail "could not read the theme colour"
+    keyboard="" source="" brightness=0 transport=""
+    IFS=$'\t' read -r keyboard source brightness transport < <(
+        jq -r '[.target // "", .accent_source // "", (.brightness // 0), (.transport // "")] | @tsv' "$STATE" 2>/dev/null
+    )
+    # Rounding in the controller can leave a colour a step or two off, which
+    # the eye cannot tell apart, so treat a small distance as a match.
+    matches=false
+    if valid_hex "$keyboard" && [ "$(hex_distance "$theme" "$keyboard")" -le 3 ]; then
+        matches=true
+    fi
+    jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" \
+        --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" '{
+        ok: true,
+        theme: $theme,
+        keyboard: $keyboard,
+        matches: $matches,
+        exact: ($source == "override-exact"),
+        brightness: $brightness,
+        transport: $transport
+    }'
+    ;;
+
+targets)
+    for hex in "$@"; do
+        valid_hex "$hex" || continue
+        target=$(dry_target "$hex")
+        [ -n "$target" ] && printf '%s %s\n' "$hex" "$target"
+    done | jq -R -nc '{ok: true, map: ([inputs | split(" ") | {(.[0]): .[1]}] | add // {})}'
+    ;;
+
+preview)
+    valid_hex "${1:-}" || fail "invalid colour"
+    target=$(dry_target "$1")
+    [ -n "$target" ] || fail "could not preview $1"
+    jq -nc --arg keyboard "$target" '{ok: true, keyboard: $keyboard}'
+    ;;
+
+apply)
+    valid_hex "${1:-}" || fail "invalid colour"
+    "$CONTROLLER" apply ${exact[@]+"${exact[@]}"} --color "$1" >/dev/null 2>&1 || fail "keyboard apply failed"
+    jq -nc '{ok: true}'
+    ;;
+
+reset)
+    "$CONTROLLER" apply >/dev/null 2>&1 || fail "keyboard apply failed"
+    jq -nc '{ok: true}'
+    ;;
+
+*)
+    echo "usage: keyboard-accent status|targets|preview|apply|reset" >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,1461 @@
+#!/usr/bin/env python3
+"""Follow the active Omarchy theme on an AULA F75 Max keyboard.
+
+The keyboard exposes two independent LED groups over its 0xFF13 HID
+feature-report channel:
+
+* the key LEDs, written with the direct per-key frame (04 20), and
+* the underglow/effect LEDs, written with the static effect command (04 13).
+
+Only 04 13 carries a brightness byte.  04 20 does not, and the per-key
+values are not scaled by the keyboard's brightness setting.  To keep the
+two groups visually consistent this script:
+
+1. reads page 0 of the live LED table (enough for brightness inference),
+2. infers the current brightness level from the effect group's values,
+3. writes the key group with either the raw theme colour (default,
+   maximum saturation) or the brightness-matched effect value, reusing the
+   last full frame it wrote, and
+4. sets the effect group with the static effect command at that same level.
+
+Step 4 also rewrites the effect group's calibrated bytes, so the cached
+frame only needs a placeholder there, and the direct entries survive it.
+A full nine-page read is therefore only needed on the first run, when the
+zone split is still unknown, or with match_direct_zone enabled.
+
+The colour is the theme accent converted to HSL and given a saturation
+floor so warm greys like Last Horizon's #b59790 become a real coral
+instead of a washed-out near-white.
+
+When the 2.4 GHz dongle (05AC:024F) is connected instead, the script selects
+its 0xFF60 command interface and writes the dongle's 32-byte OUTPUT report
+protocol: a commit packet followed by the firmware's static effect.  The
+dongle has no documented per-key frame or LED readback, so its whole LED set
+uses one accent and brightness comes from the last successfully applied level.
+
+Usage:
+    omarchy-keyboard-accent apply [theme-name] [--verify]
+    omarchy-keyboard-accent read
+    omarchy-keyboard-accent status
+    omarchy-keyboard-accent set-brightness N
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import colorsys
+import fcntl
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import tomllib
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Paths and constants
+# ---------------------------------------------------------------------------
+
+HOME = Path.home()
+THEME_DIR = HOME / ".local/state/omarchy/current/theme"
+THEME_NAME_FILE = HOME / ".local/state/omarchy/current/theme.name"
+CONFIG_FILE = HOME / ".config/omarchy/keyboard-accent/config.toml"
+STATE_DIR = HOME / ".local/state/omarchy/keyboard-accent"
+STATE_FILE = STATE_DIR / "state.json"
+LOCK_FILE = STATE_DIR / "lock"
+LOG_FILE = STATE_DIR / "keyboard-accent.log"
+
+DEFAULT_DEVICE = "auto"
+
+HIDIOCSFEATURE = 0xC0414806
+HIDIOCGFEATURE = 0xC0414807
+REPORT_LEN = 64
+TABLE_PAGES = 9
+TABLE_BYTES = TABLE_PAGES * REPORT_LEN
+ENTRY_COUNT = TABLE_BYTES // 4
+
+# HID pacing for the wired feature-report protocol.  The firmware acks every
+# control transfer synchronously, so these are settling gaps rather than the
+# transfer time itself.  Verified repeatedly with `apply --verify`; raise them
+# again if a keyboard firmware update starts dropping frames.
+FEATURE_SETTLE = 0.010   # before each feature report
+ACK_POLL = 0.020         # between readiness polls
+PAGE_SETTLE = 0.025      # between table pages
+
+# A missed ack leaves the keyboard on the previous colour until the next
+# apply, so a transient protocol error is retried from a clean reopen.
+APPLY_ATTEMPTS = 3
+APPLY_RETRY_DELAY = 0.5
+
+# Wired SONiX command interface and the 2.4 GHz dongle use completely
+# different USB devices and report formats.  The dongle is 05AC:024F,
+# usage page 0xFF60, 32-byte OUTPUT reports with an additive checksum.
+WIRED_VENDOR = "0c45"
+WIRED_PRODUCT = "800a"
+WIRELESS_VENDOR = "05ac"
+WIRELESS_PRODUCT = "024f"
+WIRELESS_USAGE_PAGE = 0xFF60
+WIRELESS_REPORT_LEN = 32
+
+# Fitted on this keyboard (2026-10-21/22) from measured outputs.  The
+# firmware applies a per-channel gain, then a brightness curve.  The model
+# matches the live effect table to within +/-1 per channel on sampled colours
+# (the firmware's exact quantization is not modelled), and the scale values
+# are the five firmware brightness levels.
+CHANNEL_GAIN = (0.6575, 0.9911, 0.9885)
+BRIGHTNESS_SCALE = (0.1805, 0.3750, 0.6598, 0.7848, 1.0000)
+
+DEFAULT_CONFIG = {
+    "min_saturation": 0.90,
+    "max_lightness": 0.54,
+    "min_lightness": 0.35,
+    "device": DEFAULT_DEVICE,
+    "device_prefer": "auto",
+    "default_brightness": 5,
+    "fallback_speed": 3,
+    "wireless_color_order": "bgr",
+    "match_direct_zone": False,
+    "color_mode": "theme",
+    "fixed_color": "#F34820",
+    "theme_overrides": {},
+}
+
+
+class ProtocolError(RuntimeError):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Small utilities
+# ---------------------------------------------------------------------------
+
+
+def now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def hexstr(rgb: tuple[int, int, int]) -> str:
+    return "#{:02X}{:02X}{:02X}".format(*rgb)
+
+
+def parse_color(value: str) -> tuple[int, int, int]:
+    """Parse #RGB, #RRGGBB, RRGGBB, 0xRRGGBB, or rgb()/rgba()."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("empty colour")
+
+    text = value.strip()
+    m = re.fullmatch(r"rgba?\(([^)]*)\)", text, re.IGNORECASE)
+    if m:
+        parts = [p.strip() for p in m.group(1).split(",")]
+        if len(parts) < 3:
+            raise ValueError(f"bad rgb() colour: {value!r}")
+        try:
+            rgb = [int(float(p)) for p in parts[:3]]
+        except ValueError as exc:
+            raise ValueError(f"bad rgb() colour: {value!r}") from exc
+        return tuple(max(0, min(255, c)) for c in rgb)  # type: ignore[return-value]
+
+    text = text.lower()
+    if text.startswith("#"):
+        text = text[1:]
+    if text.startswith("0x"):
+        text = text[2:]
+    if len(text) == 3 and all(c in "0123456789abcdef" for c in text):
+        text = "".join(c * 2 for c in text)
+    if len(text) != 6 or any(c not in "0123456789abcdef" for c in text):
+        raise ValueError(f"unsupported colour: {value!r}")
+    return tuple(int(text[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def log(message: str) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} {message}\n"
+    try:
+        with LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+        if LOG_FILE.stat().st_size > 256 * 1024:
+            kept = LOG_FILE.read_text(encoding="utf-8", errors="replace").splitlines()[-1000:]
+            LOG_FILE.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    if os.environ.get("KEYBOARD_ACCENT_VERBOSE") or sys.stderr.isatty():
+        print(line, end="", file=sys.stderr)
+
+
+def load_config() -> dict:
+    config = dict(DEFAULT_CONFIG)
+    if not CONFIG_FILE.exists():
+        return config
+    try:
+        data = tomllib.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - config errors must not break a theme switch
+        log(f"config parse error: {exc}")
+        return config
+
+    color = data.get("color", {})
+    device = data.get("device", {})
+    lighting = data.get("lighting", {})
+    overrides = data.get("theme_overrides", {})
+
+    for key in ("min_saturation", "max_lightness", "min_lightness"):
+        if key in color:
+            config[key] = float(color[key])
+    if "mode" in color:
+        config["color_mode"] = str(color["mode"])
+    if "fixed_color" in color:
+        config["fixed_color"] = str(color["fixed_color"])
+    if "path" in device:
+        config["device"] = str(device["path"])
+    if "prefer" in device:
+        config["device_prefer"] = str(device["prefer"]).strip().lower()
+    if config["device_prefer"] not in ("auto", "wired", "wireless"):
+        log(f"invalid device.prefer {config['device_prefer']!r}; using auto")
+        config["device_prefer"] = "auto"
+    if "default_brightness" in lighting:
+        config["default_brightness"] = int(lighting["default_brightness"])
+    if "speed" in lighting:
+        config["fallback_speed"] = int(lighting["speed"])
+    if "wireless_color_order" in lighting:
+        config["wireless_color_order"] = str(lighting["wireless_color_order"]).strip().lower()
+    if config["wireless_color_order"] not in ("bgr", "rgb"):
+        log(f"invalid lighting.wireless_color_order {config['wireless_color_order']!r}; using bgr")
+        config["wireless_color_order"] = "bgr"
+    if "match_direct_zone" in lighting:
+        config["match_direct_zone"] = bool(lighting["match_direct_zone"])
+    if isinstance(overrides, dict):
+        config["theme_overrides"] = {str(key): str(value) for key, value in overrides.items()}
+    elif overrides:
+        log("theme_overrides must be a TOML table; ignoring")
+
+    config["min_saturation"] = min(max(config["min_saturation"], 0.0), 1.0)
+    config["max_lightness"] = min(max(config["max_lightness"], 0.0), 1.0)
+    config["min_lightness"] = min(max(config["min_lightness"], 0.0), config["max_lightness"])
+    config["default_brightness"] = min(max(config["default_brightness"], 1), 5)
+    config["fallback_speed"] = min(max(config["fallback_speed"], 1), 5)
+    return config
+
+
+def load_state() -> dict:
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(state: dict) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, STATE_FILE)
+
+
+def acquire_lock(timeout: float = 15.0) -> int | None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fd
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                return None
+            time.sleep(0.1)
+
+
+def release_lock(fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+# ---------------------------------------------------------------------------
+# HID transport
+# ---------------------------------------------------------------------------
+
+
+def _set_feature(fd: int, payload: bytes) -> None:
+    if len(payload) != REPORT_LEN:
+        raise ValueError(f"feature report must be {REPORT_LEN} bytes, got {len(payload)}")
+    time.sleep(FEATURE_SETTLE)
+    fcntl.ioctl(fd, HIDIOCSFEATURE, bytes([0]) + bytes(payload))
+
+
+def _get_feature(fd: int) -> bytes:
+    buf = bytearray(REPORT_LEN + 1)
+    fcntl.ioctl(fd, HIDIOCGFEATURE, buf)
+    return bytes(buf)
+
+
+def _cmd(first: int, second: int, fields: dict[int, int] | None = None) -> bytearray:
+    packet = bytearray(REPORT_LEN)
+    packet[0] = first
+    packet[1] = second
+    if fields:
+        for index, value in fields.items():
+            packet[index] = value
+    return packet
+
+
+def _wait_ack(fd: int, first: int | None = None, second: int | None = None,
+              attempts: int = 10) -> bytes:
+    last: bytes | None = None
+    for _ in range(attempts):
+        time.sleep(ACK_POLL)
+        last = _get_feature(fd)
+        if last[4] != 0x01:
+            continue
+        if first is not None and last[1] != first:
+            continue
+        if second is not None and last[2] != second:
+            continue
+        return last
+    showing = last[:8].hex(" ") if last else "none"
+    raise ProtocolError(f"no ack for {first!r}/{second!r}; last={showing}")
+
+
+def read_report_descriptor(path: Path) -> bytes:
+    """Read a hidraw node's HID report descriptor from sysfs."""
+    try:
+        real = Path(path).resolve()
+        node = Path("/sys/class/hidraw") / real.name / "device/report_descriptor"
+        return node.read_bytes()
+    except OSError:
+        return b""
+
+
+def descriptor_output_bytes(desc: bytes, usage_page: int) -> int | None:
+    """Return the output report size for a top-level usage page.
+
+    This is deliberately a small HID descriptor parser.  It only needs to
+    distinguish the wired 0xFF13 command interface from the dongle 0xFF60
+    command interface and learn whether the output report is 32 bytes.
+    """
+    index = 0
+    page = 0
+    report_size = 0
+    report_count = 0
+    stack: list[int] = []
+    best: int | None = None
+
+    while index < len(desc):
+        prefix = desc[index]
+        index += 1
+        if prefix == 0xFE:  # long item
+            if index >= len(desc):
+                break
+            size = desc[index]
+            index += 1 + size
+            continue
+
+        size = prefix & 0x03
+        if size == 3:
+            size = 4
+        item_type = (prefix >> 2) & 0x03
+        tag = prefix >> 4
+        if index + size > len(desc):
+            break
+        data = desc[index : index + size]
+        index += size
+        value = int.from_bytes(data, "little") if data else 0
+
+        if item_type == 1:  # global item
+            if tag == 0x0:
+                page = value
+            elif tag == 0x7:
+                report_size = value
+            elif tag == 0x9:
+                report_count = value
+        elif item_type == 0:  # main item
+            if tag == 0xA:  # collection
+                stack.append(page)
+            elif tag == 0xC:  # end collection
+                if stack:
+                    stack.pop()
+            elif tag == 0x9:  # output
+                current_page = stack[-1] if stack else page
+                if current_page == usage_page:
+                    length = (report_size * report_count + 7) // 8
+                    if length > 0:
+                        best = max(best or 0, length)
+
+    return best
+
+
+def hid_ids(path: Path) -> tuple[str, str] | None:
+    """Return (vendor, product) from a hidraw node's HID_ID, if present."""
+    try:
+        real = Path(path).resolve()
+        uevent = Path("/sys/class/hidraw") / real.name / "device/uevent"
+        text = uevent.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("HID_ID="):
+            parts = line.split("=", 1)[1].split(":")
+            if len(parts) == 3:
+                try:
+                    return f"{int(parts[1], 16):04x}", f"{int(parts[2], 16):04x}"
+                except ValueError:
+                    return None
+    return None
+
+
+def udev_properties(path: Path) -> dict[str, str]:
+    try:
+        proc = subprocess.run(
+            ["udevadm", "info", "-q", "property", "-n", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    properties: dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            properties[key] = value
+    return properties
+
+
+def _is_wireless_props(props: dict[str, str]) -> bool:
+    vendor = props.get("ID_VENDOR_ID", "").lower()
+    product = props.get("ID_MODEL_ID", "").lower()
+    model = props.get("ID_MODEL", "").lower()
+    return (
+        (vendor == WIRELESS_VENDOR and product == WIRELESS_PRODUCT)
+        or "2.4g dongle" in model
+        or ("dongle" in model and "aula" in model)
+    )
+
+
+def wireless_candidates() -> list[tuple[str, int]]:
+    """Return (hidraw path, output report bytes) for the 2.4 GHz command channel."""
+    candidates: list[tuple[str, int]] = []
+    for dev in sorted(Path("/dev").glob("hidraw*")):
+        props = udev_properties(dev)
+        if not _is_wireless_props(props):
+            continue
+        desc = read_report_descriptor(dev)
+        output_bytes = descriptor_output_bytes(desc, WIRELESS_USAGE_PAGE)
+        if output_bytes:
+            candidates.append((str(dev), output_bytes))
+
+    if not candidates:
+        # Fallback for systems where udev properties are unavailable: require
+        # the dongle's USB IDs and identify the command channel by its HID
+        # descriptor, so an unrelated 0xFF60 device cannot be selected.
+        wanted_ids = (WIRELESS_VENDOR, WIRELESS_PRODUCT)
+        for dev in sorted(Path("/dev").glob("hidraw*")):
+            if hid_ids(dev) != wanted_ids:
+                continue
+            output_bytes = descriptor_output_bytes(
+                read_report_descriptor(dev), WIRELESS_USAGE_PAGE
+            )
+            if output_bytes and output_bytes >= 31:
+                candidates.append((str(dev), output_bytes))
+
+    # Prefer the documented 32-byte command channel.
+    candidates.sort(key=lambda item: (0 if item[1] == WIRELESS_REPORT_LEN else 1, item[0]))
+    return candidates
+
+
+def wired_candidates() -> list[str]:
+    candidates: list[str] = []
+    for pattern in (
+        "/dev/input/by-id/*AULA*F75*if03-hidraw",
+        "/dev/input/by-id/*SONiX*if03-hidraw",
+    ):
+        for path in sorted(Path("/").glob(pattern.lstrip("/"))):
+            if str(path) not in candidates:
+                candidates.append(str(path))
+
+    if not candidates:
+        for dev in sorted(Path("/dev").glob("hidraw*")):
+            props = udev_properties(dev)
+            ids = hid_ids(dev)
+            vendor = props.get("ID_VENDOR_ID", "").lower()
+            product = props.get("ID_MODEL_ID", "").lower()
+            if (vendor, product) != (WIRED_VENDOR, WIRED_PRODUCT) and ids != (
+                WIRED_VENDOR,
+                WIRED_PRODUCT,
+            ):
+                continue
+            if props.get("ID_USB_INTERFACE_NUM") == "03":
+                candidates.append(str(dev))
+            elif descriptor_output_bytes(read_report_descriptor(dev), 0xFF13) == REPORT_LEN:
+                candidates.append(str(dev))
+    return candidates
+
+
+def detect_transport(path: Path) -> str | None:
+    desc = read_report_descriptor(path)
+    if descriptor_output_bytes(desc, WIRELESS_USAGE_PAGE):
+        return "wireless"
+    if descriptor_output_bytes(desc, 0xFF13):
+        return "wired"
+
+    name = Path(path).name.lower()
+    if "dongle" in name or "2.4g" in name or "05ac" in name:
+        return "wireless"
+    if "if03" in name or "aula" in name:
+        return "wired"
+    return None
+
+
+def _open_path(path: str, retries: int, delay: float) -> tuple[int | None, str | None]:
+    for attempt in range(retries):
+        try:
+            return os.open(path, os.O_RDWR), None
+        except FileNotFoundError:
+            if attempt + 1 < retries:
+                time.sleep(delay)
+        except PermissionError:
+            return None, f"permission denied opening {path}"
+        except OSError as exc:
+            return None, f"cannot open {path}: {exc}"
+    return None, f"device not found: {path}"
+
+
+def open_device(config: dict, retries: int = 3, delay: float = 1.0) -> tuple[int | None, str, str]:
+    """Open the wired keyboard or the 2.4 GHz dongle, whichever is available."""
+    explicit = str(config.get("device", "auto")).strip()
+    prefer = str(config.get("device_prefer", "auto")).lower()
+
+    if explicit and explicit.lower() != "auto":
+        explicit_path = Path(explicit)
+        if explicit_path.exists():
+            transport = detect_transport(explicit_path) or "wired"
+            fd, error = _open_path(str(explicit_path), retries, delay)
+            if fd is not None:
+                return fd, str(explicit_path), transport
+            return None, error or f"cannot open {explicit}", "none"
+
+    def try_paths(
+        paths: list[str], transport: str
+    ) -> tuple[int | None, str | None, str | None, str | None]:
+        last_error: str | None = None
+        for path in paths:
+            fd, error = _open_path(path, retries, delay)
+            if fd is not None:
+                actual = detect_transport(Path(path)) or transport
+                return fd, path, actual, None
+            last_error = error or last_error
+        return None, None, None, last_error
+
+    # Avoid probing every hidraw node unless the preferred transport is
+    # actually absent.  The wired device has a stable by-id path.
+    if prefer == "wireless":
+        groups = (
+            ("wireless", lambda: [p for p, _ in wireless_candidates()]),
+            ("wired", wired_candidates),
+        )
+    else:
+        # Match the hardware's own precedence: wired if it is enumerated,
+        # otherwise the 2.4 GHz receiver.  Set device.prefer = "wireless" when
+        # both are plugged in and the keyboard is being used over 2.4 GHz.
+        groups = (
+            ("wired", wired_candidates),
+            ("wireless", lambda: [p for p, _ in wireless_candidates()]),
+        )
+
+    last_error: str | None = None
+    for transport, find_paths in groups:
+        fd, path, actual, error = try_paths(find_paths(), transport)
+        if fd is not None:
+            return fd, path or "", actual or transport
+        if error and (last_error is None or "permission denied" in error):
+            last_error = error
+
+    return None, last_error or "device not found: wired keyboard or 2.4G dongle", "none"
+
+
+# ---------------------------------------------------------------------------
+# Keyboard protocol
+# ---------------------------------------------------------------------------
+
+
+def read_table(fd: int) -> bytes:
+    _set_feature(fd, _cmd(0x04, 0x18))
+    _wait_ack(fd, 0x04, 0x18)
+
+    _set_feature(fd, _cmd(0x04, 0xF5, {8: TABLE_PAGES}))
+    _wait_ack(fd, 0x04, 0xF5)
+
+    pages: list[bytes] = []
+    for _ in range(TABLE_PAGES):
+        time.sleep(PAGE_SETTLE)
+        pages.append(_get_feature(fd)[1 : 1 + REPORT_LEN])
+
+    _set_feature(fd, _cmd(0x04, 0x02))
+    _wait_ack(fd, 0x04, 0x02)
+
+    blob = b"".join(pages)
+    if len(blob) != TABLE_BYTES:
+        raise ProtocolError(f"table read returned {len(blob)} bytes")
+    return blob
+
+
+def read_first_page(fd: int) -> bytes:
+    """Read page 0 of the live table.
+
+    Page 0 carries effect entries 1-13 plus direct entries 0/14/15 on this
+    keyboard, which is enough to infer the brightness level.  It costs about
+    0.3 s against 0.7 s for all nine pages.
+    """
+    _set_feature(fd, _cmd(0x04, 0x18))
+    _wait_ack(fd, 0x04, 0x18)
+
+    _set_feature(fd, _cmd(0x04, 0xF5, {8: 1}))
+    _wait_ack(fd, 0x04, 0xF5)
+
+    time.sleep(PAGE_SETTLE)
+    page = _get_feature(fd)[1 : 1 + REPORT_LEN]
+
+    _set_feature(fd, _cmd(0x04, 0x02))
+    _wait_ack(fd, 0x04, 0x02)
+
+    if len(page) != REPORT_LEN:
+        raise ProtocolError(f"page read returned {len(page)} bytes")
+    return page
+
+
+def decode_table(blob: bytes) -> list[tuple[int, int, int, int]]:
+    return [tuple(blob[i : i + 4]) for i in range(0, len(blob), 4)]  # type: ignore[misc]
+
+
+def encode_table(entries: list[tuple[int, int, int, int]]) -> bytes:
+    if len(entries) != ENTRY_COUNT:
+        raise ValueError(f"expected {ENTRY_COUNT} entries, got {len(entries)}")
+    return b"".join(bytes(entry) for entry in entries)
+
+
+def cached_table(state: dict) -> list[tuple[int, int, int, int]] | None:
+    """Return the last full frame this script wrote, if it is still usable.
+
+    The effect bytes in a cached frame are only placeholders: set_static
+    rewrites them with the firmware's calibrated values afterwards.  The
+    direct entries are always overwritten from the theme colour as well, so a
+    cached frame cannot carry a stale accent into a successful apply.
+    """
+    raw = state.get("table_cache")
+    if not isinstance(raw, str):
+        return None
+    try:
+        blob = base64.b64decode(raw, validate=True)
+    except (ValueError, TypeError):
+        return None
+    if len(blob) != TABLE_BYTES:
+        return None
+    return decode_table(blob)
+
+
+def set_static(fd: int, rgb: tuple[int, int, int], brightness: int, speed: int) -> None:
+    """Set the firmware's static effect (colour + brightness)."""
+    _set_feature(fd, _cmd(0x04, 0x18))
+    _wait_ack(fd, 0x04, 0x18)
+
+    _set_feature(fd, _cmd(0x04, 0x13, {8: 0x01}))
+    _wait_ack(fd, 0x04, 0x13)
+
+    data = bytearray(REPORT_LEN)
+    data[0] = 0x01  # static mode
+    data[1], data[2], data[3] = rgb
+    data[8] = 0x00  # single colour, not rainbow
+    data[9] = brightness
+    data[10] = speed
+    data[11] = 0x00  # direction: right
+    data[14] = 0xAA
+    data[15] = 0x55
+    _set_feature(fd, data)
+    # Data packets are echoed verbatim and never set the ready flag.
+    time.sleep(0.02)
+
+    _set_feature(fd, _cmd(0x04, 0x02))
+    _wait_ack(fd, 0x04, 0x02)
+
+    _set_feature(fd, _cmd(0x04, 0xF0))
+    time.sleep(0.05)
+
+
+def write_direct(fd: int, entries: list[tuple[int, int, int, int]]) -> None:
+    """Write the direct per-key frame (no brightness byte)."""
+    blob = encode_table(entries)
+
+    _set_feature(fd, _cmd(0x04, 0x20, {8: TABLE_PAGES}))
+    _wait_ack(fd, 0x04, 0x20)
+
+    for page in range(TABLE_PAGES):
+        _set_feature(fd, blob[page * REPORT_LEN : (page + 1) * REPORT_LEN])
+        time.sleep(0.005)
+
+    _set_feature(fd, bytes(REPORT_LEN))  # refresh/zero packet, as SignalRGB does
+    time.sleep(0.01)
+
+    _set_feature(fd, _cmd(0x04, 0x02))
+    _wait_ack(fd, 0x04, 0x02)
+    time.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# 2.4 GHz dongle transport (05AC:024F, usage page 0xFF60)
+# ---------------------------------------------------------------------------
+#
+# The dongle is not a wired keyboard behind a radio: it is a separate USB
+# device with a 32-byte OUTPUT report protocol and an additive checksum.
+# Sources: VitalyArt/Aula-F75-Max-Driver WirelessAulaDevice.swift and
+# Ghost-CR/F75_Initializer protocol_core.py, as documented in
+# tarikmanoar/aula-f75-max docs/protocol-research.md.
+#
+# There is no documented per-key direct frame over the dongle.  Theme sync on
+# this transport therefore uses the firmware's static effect, which colours
+# the whole LED set with one accent and carries the 1-5 brightness level.
+
+
+def _wireless_checksum(packet: bytearray) -> int:
+    return sum(packet[:31]) & 0xFF
+
+
+def _wireless_packet(fields: dict[int, int] | None = None) -> bytes:
+    packet = bytearray(WIRELESS_REPORT_LEN)
+    if fields:
+        for index, value in fields.items():
+            packet[index] = value & 0xFF
+    packet[31] = _wireless_checksum(packet)
+    return bytes(packet)
+
+
+def _wireless_write(fd: int, packet: bytes) -> None:
+    if len(packet) != WIRELESS_REPORT_LEN:
+        raise ValueError(f"wireless report must be {WIRELESS_REPORT_LEN} bytes")
+    # Linux hidraw expects the report number as the first byte.  The dongle's
+    # command reports use report ID 0, so the wire buffer is 33 bytes.
+    payload = b"\x00" + packet
+    try:
+        written = os.write(fd, payload)
+    except OSError:
+        # Some hidraw/kernel combinations expose an unnumbered report and
+        # expect the payload without a separate report-ID byte.
+        written = os.write(fd, packet)
+    if written != len(packet) and written != len(payload):
+        raise ProtocolError(f"short wireless write: {written} bytes")
+
+
+def apply_wireless(
+    fd: int,
+    rgb: tuple[int, int, int],
+    brightness: int,
+    speed: int = 3,
+    color_order: str = "bgr",
+) -> None:
+    """Set the dongle's static LED effect.  Does not read back or verify."""
+    brightness = min(max(int(brightness), 1), 5)
+    speed = min(max(int(speed), 1), 5)
+    red, green, blue = rgb
+    if color_order == "rgb":
+        first, second, third = red, green, blue
+    else:
+        # The dongle protocol stores the 0xRRGGBB value little-endian in
+        # [4]=B, [5]=G, [6]=R.  Expose the order as config because some
+        # reverse-engineering sources disagree; this is easy to correct on
+        # hardware without editing the script.
+        first, second, third = blue, green, red
+
+    # Commit first, then the LED mode packet; the firmware expects ~50 ms
+    # between them.
+    _wireless_write(fd, _wireless_packet({0: 0x0F}))
+    time.sleep(0.05)
+
+    led = _wireless_packet(
+        {
+            0: 0x05,
+            1: 0x10,
+            2: 0x00,
+            3: 0x01,  # static
+            4: first,
+            5: second,
+            6: third,
+            11: 0x00,  # single colour, not rainbow
+            12: brightness,
+            13: speed,
+            14: 0x00,  # direction: right
+            17: 0xAA,
+            18: 0x55,
+        }
+    )
+    _wireless_write(fd, led)
+    time.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# Colour handling
+# ---------------------------------------------------------------------------
+
+
+def theme_accent(config: dict) -> tuple[tuple[int, int, int], str]:
+    if config["color_mode"] == "fixed":
+        return parse_color(config["fixed_color"]), "fixed"
+
+    colors_path = THEME_DIR / "colors.toml"
+    if not colors_path.exists():
+        raise RuntimeError(f"missing theme colours: {colors_path}")
+    data = tomllib.loads(colors_path.read_text(encoding="utf-8"))
+    for key in ("accent", "blue", "magenta", "red"):
+        value = data.get(key)
+        if isinstance(value, str):
+            try:
+                return parse_color(value), key
+            except ValueError:
+                continue
+    raise RuntimeError("no usable accent colour in colors.toml")
+
+
+def current_theme_slug() -> str | None:
+    """Return the staged theme slug, for example 'last-horizon'."""
+    try:
+        name = THEME_NAME_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return name or None
+
+
+def resolve_target(
+    config: dict,
+    theme_name: str | None = None,
+    color_override: str | None = None,
+    exact: bool = False,
+) -> tuple[
+    tuple[int, int, int],
+    tuple[int, int, int],
+    str,
+    tuple[float, float, float],
+    int,
+]:
+    """Resolve the final LED target and its provenance.
+
+    A [theme_overrides] entry bypasses the HSL transform so the configured
+    hex is used exactly.  --color and fixed mode keep the normal vivid()
+    pipeline, matching the existing behaviour, unless --exact is given with
+    --color, which uses the colour as written (neutrals such as white would
+    otherwise be pushed to a warm tint by the saturation floor).
+    """
+    if color_override:
+        accent = parse_color(color_override)
+        source = "override"
+        if exact:
+            hsl = colorsys.rgb_to_hls(*(channel / 255.0 for channel in accent))
+            return accent, accent, "override-exact", hsl, max(accent) - min(accent)
+    elif config["color_mode"] == "fixed":
+        accent = parse_color(config["fixed_color"])
+        source = "fixed"
+    else:
+        accent, source = theme_accent(config)
+        slug = current_theme_slug() or theme_name
+        override = config.get("theme_overrides", {}).get(slug) if slug else None
+        if override:
+            try:
+                target = parse_color(override)
+            except ValueError as exc:
+                log(f"invalid theme override for {slug}: {exc}")
+            else:
+                hsl = colorsys.rgb_to_hls(*(channel / 255.0 for channel in target))
+                return target, target, f"theme_override:{slug}", hsl, max(target) - min(target)
+
+    target, hsl, chroma = vivid(accent, config)
+    return target, accent, source, hsl, chroma
+
+
+def vivid(rgb: tuple[int, int, int], config: dict) -> tuple[tuple[int, int, int], tuple[float, float, float], int]:
+    """Raise saturation to the floor and clamp lightness for visible LEDs."""
+    red, green, blue = (channel / 255.0 for channel in rgb)
+    hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+
+    if saturation < 0.05:
+        # A near-white accent has no meaningful hue.  Use a warm coral rather
+        # than letting colorsys fall back to pure red.
+        hue = 0.03
+
+    saturation = max(saturation, config["min_saturation"])
+    lightness = min(max(lightness, config["min_lightness"]), config["max_lightness"])
+
+    out_r, out_g, out_b = colorsys.hls_to_rgb(hue, lightness, saturation)
+    target = (
+        max(0, min(255, round(out_r * 255))),
+        max(0, min(255, round(out_g * 255))),
+        max(0, min(255, round(out_b * 255))),
+    )
+    chroma = max(target) - min(target)
+    return target, (hue, lightness, saturation), chroma
+
+
+def scale_rgb(rgb: tuple[int, int, int], brightness: int) -> tuple[int, int, int]:
+    """Scale a colour by the firmware brightness curve, without calibration."""
+    scale = BRIGHTNESS_SCALE[brightness - 1]
+    return tuple(max(0, min(255, round(channel * scale))) for channel in rgb)  # type: ignore[return-value]
+
+
+def expected_effect(target: tuple[int, int, int], brightness: int) -> tuple[int, int, int]:
+    scale = BRIGHTNESS_SCALE[brightness - 1]
+    return tuple(  # type: ignore[return-value]
+        round(target[channel] * CHANNEL_GAIN[channel] * scale)
+        for channel in range(3)
+    )
+
+
+def infer_brightness(
+    entries: list[tuple[int, int, int, int]],
+    effect_indices: list[int],
+    last_target: tuple[int, int, int] | None,
+    stored_brightness: int,
+) -> int:
+    if not effect_indices or last_target is None:
+        return stored_brightness
+
+    values = [entries[i][1:] for i in effect_indices if max(entries[i][1:]) > 0]
+    if not values:
+        return stored_brightness
+
+    observed, count = Counter(values).most_common(1)[0]
+    if count < max(1, int(len(effect_indices) * 0.8)):
+        return stored_brightness
+
+    best_error = None
+    best_level = stored_brightness
+    for level in range(1, 6):
+        predicted = expected_effect(last_target, level)
+        error = sum(abs(observed[channel] - predicted[channel]) for channel in range(3))
+        if best_error is None or error < best_error:
+            best_error, best_level = error, level
+
+    # The model was measured to within +/-1 per channel on this keyboard.
+    if best_error is not None and best_error <= 12:
+        return best_level
+    return stored_brightness
+
+
+def dominant_colour(
+    entries: list[tuple[int, int, int, int]], indices: list[int]
+) -> tuple[int, int, int] | None:
+    values = [entries[i][1:] for i in indices if max(entries[i][1:]) > 0]
+    if not values:
+        return None
+    return Counter(values).most_common(1)[0][0]
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_apply(args: argparse.Namespace) -> int:
+    for attempt in range(1, APPLY_ATTEMPTS + 1):
+        try:
+            return _apply_once(args)
+        except ProtocolError as exc:
+            if attempt == APPLY_ATTEMPTS:
+                log(f"apply failed after {attempt} attempts: {exc}")
+                return 1
+            log(f"apply attempt {attempt} failed: {exc}; retrying")
+            time.sleep(APPLY_RETRY_DELAY)
+    return 1
+
+
+def _apply_once(args: argparse.Namespace) -> int:
+    config = load_config()
+    lock = acquire_lock()
+    if lock is None:
+        log("apply skipped: another instance holds the lock")
+        return 0
+
+    try:
+        state = load_state()
+        theme_name = current_theme_slug() or args.theme or state.get("theme") or "unknown"
+        target, accent, accent_source, (hue, lightness, saturation), chroma = resolve_target(
+            config, theme_name, args.color, getattr(args, "exact", False)
+        )
+        target_hex = hexstr(target)
+
+        if args.dry_run:
+            print(
+                f"theme={theme_name} accent={hexstr(accent)} ({accent_source}) "
+                f"target={target_hex} H={hue * 360:.1f} L={lightness:.3f} "
+                f"S={saturation:.3f} chroma={chroma}"
+            )
+            return 0
+
+        fd, path, transport = open_device(config)
+        if fd is None:
+            log(f"theme={theme_name} target={target_hex} device={path} result=skipped")
+            return 0
+
+        try:
+            stored_brightness = int(state.get("brightness", config["default_brightness"]))
+            stored_brightness = min(max(stored_brightness, 1), 5)
+            brightness = stored_brightness
+            if args.brightness is not None:
+                brightness = min(max(args.brightness, 1), 5)
+
+            if transport == "wireless":
+                apply_wireless(
+                    fd, target, brightness, config["fallback_speed"],
+                    config["wireless_color_order"],
+                )
+                state.update(
+                    {
+                        "version": 1,
+                        "theme": theme_name,
+                        "accent": hexstr(accent),
+                        "accent_source": accent_source,
+                        "target": target_hex,
+                        "target_rgb": list(target),
+                        "brightness": brightness,
+                        "transport": "wireless",
+                        "device_path": path,
+                        "mode": "wireless-static",
+                        "updated_at": now_iso(),
+                    }
+                )
+                save_state(state)
+                log(
+                    f"theme={theme_name} accent={hexstr(accent)} target={target_hex} "
+                    f"H={hue * 360:.1f} L={lightness:.3f} S={saturation:.3f} "
+                    f"chroma={chroma} brightness={brightness} transport=wireless "
+                    f"path={path} mode=wireless-static verified=n/a result=ok"
+                )
+                return 0
+
+            effect_indices = list(state.get("effect_indices") or [])
+            direct_indices = list(state.get("direct_indices") or [])
+            bootstrapped = False
+            speed = config["fallback_speed"]
+            frame = cached_table(state)
+
+            last_target = None
+            if isinstance(state.get("target_rgb"), list) and len(state["target_rgb"]) == 3:
+                last_target = tuple(int(c) for c in state["target_rgb"])  # type: ignore[assignment]
+
+            fast_path = bool(
+                frame is not None
+                and effect_indices
+                and direct_indices
+                and not config["match_direct_zone"]
+                and len(effect_indices) + len(direct_indices) == ENTRY_COUNT
+            )
+
+            if fast_path:
+                # Only page 0 is needed: it carries enough effect entries to
+                # infer the live brightness, and set_static rewrites the
+                # effect bytes afterwards, so the rest of the frame can come
+                # from the last frame this script wrote.
+                try:
+                    page = decode_table(read_first_page(fd))
+                except ProtocolError as exc:
+                    log(f"page-0 read failed: {exc}; using full table read")
+                    fast_path = False
+
+            if fast_path:
+                page_effect = [index for index in effect_indices if index < len(page)]
+                if last_target is not None and page_effect:
+                    brightness = infer_brightness(
+                        page, page_effect, last_target, stored_brightness
+                    )
+
+                if args.brightness is not None:
+                    brightness = min(max(args.brightness, 1), 5)
+
+                direct_rgb = scale_rgb(target, brightness)
+                for index in direct_indices:
+                    frame[index] = (frame[index][0], *direct_rgb)
+
+                try:
+                    write_direct(fd, frame)  # type: ignore[arg-type]
+                except ProtocolError as exc:
+                    log(f"direct-zone write failed: {exc}; effect group is still set")
+
+                # Mode, colour and brightness for the effect group.  This also
+                # rewrites the group's calibrated bytes, so the placeholder
+                # effect values in the cached frame are expected.
+                set_static(fd, target, brightness, speed)
+            else:
+                # Read the current frame for brightness inference.  This is safe
+                # even when a dynamic effect is running; inference simply falls
+                # back to the stored level if the frame is not uniform.
+                try:
+                    current_blob = read_table(fd)
+                except ProtocolError as exc:
+                    log(f"initial table read failed: {exc}")
+                    current_blob = None
+
+                if not effect_indices and not direct_indices:
+                    # First run (or state was lost).  Probe brightness 1 and 5:
+                    # the effect group changes, the direct group does not.
+                    effect_indices, direct_indices = bootstrap_zones(fd, target, config)
+                    bootstrapped = True
+                    log(
+                        f"bootstrapped zones: effect={len(effect_indices)} "
+                        f"direct={len(direct_indices)}"
+                    )
+
+                if current_blob is not None and last_target is not None and effect_indices:
+                    brightness = infer_brightness(
+                        decode_table(current_blob), effect_indices, last_target, stored_brightness
+                    )
+
+                if args.brightness is not None:
+                    brightness = min(max(args.brightness, 1), 5)
+
+                # The static command sets the effect/underglow group.
+                set_static(fd, target, brightness, speed)
+                after_static = decode_table(read_table(fd))
+
+                # The direct command sets the key group.  By default scale the
+                # saturated colour by the inferred brightness level (at level 5
+                # this is the raw colour).  Optionally match the effect group's
+                # calibrated output exactly instead.
+                direct_rgb = scale_rgb(target, brightness)
+                if config["match_direct_zone"] and direct_indices:
+                    matched_effect = dominant_colour(after_static, effect_indices)
+                    if matched_effect is not None:
+                        direct_rgb = matched_effect
+
+                if direct_indices:
+                    new_entries = [tuple(entry) for entry in after_static]
+                    for index in direct_indices:
+                        new_entries[index] = (after_static[index][0], *direct_rgb)
+                    try:
+                        write_direct(fd, new_entries)  # type: ignore[arg-type]
+                    except ProtocolError as exc:
+                        log(f"direct-zone write failed: {exc}; effect group is still set")
+                    frame = new_entries
+
+            if getattr(args, "verify", False):
+                verified = verify_state(
+                    fd, effect_indices, direct_indices, direct_rgb, target, brightness
+                )
+            else:
+                verified = "skipped"
+
+            state.update(
+                {
+                    "version": 1,
+                    "theme": theme_name,
+                    "accent": hexstr(accent),
+                    "accent_source": accent_source,
+                    "target": target_hex,
+                    "target_rgb": list(target),
+                    "brightness": brightness,
+                    "transport": "wired",
+                    "device_path": path,
+                    "effect_indices": effect_indices,
+                    "direct_indices": direct_indices,
+                    "match_direct_zone": config["match_direct_zone"],
+                    "mode": "static+direct" if direct_indices else "static",
+                    "updated_at": now_iso(),
+                }
+            )
+            # Keep the frame so the next apply can skip the full table read.
+            # Only a complete, partition-valid frame is worth caching: every
+            # entry is then rewritten by the direct frame or by set_static.
+            if (
+                frame is not None
+                and direct_indices
+                and len(effect_indices) + len(direct_indices) == ENTRY_COUNT
+            ):
+                blob = encode_table([tuple(entry) for entry in frame])  # type: ignore[arg-type]
+                state["table_cache"] = base64.b64encode(blob).decode("ascii")
+            save_state(state)
+
+            log(
+                f"theme={theme_name} accent={hexstr(accent)} target={target_hex} "
+                f"H={hue * 360:.1f} L={lightness:.3f} S={saturation:.3f} "
+                f"chroma={chroma} brightness={brightness} transport=wired "
+                f"effect={len(effect_indices)} direct={len(direct_indices)} "
+                f"direct_rgb={hexstr(direct_rgb)} bootstrapped={bootstrapped} "
+                f"verified={verified} result=ok"
+            )
+            return 0
+        finally:
+            os.close(fd)
+    except ProtocolError:
+        raise  # cmd_apply retries these
+    except Exception as exc:  # noqa: BLE001 - a hook must not break theme switching
+        log(f"apply failed: {exc}")
+        return 1
+    finally:
+        release_lock(lock)
+
+
+def bootstrap_zones(
+    fd: int, target: tuple[int, int, int], config: dict
+) -> tuple[list[int], list[int]]:
+    """Identify which LEDs follow the static effect and which are direct.
+
+    Setting the same probe colour at brightness 1 and 5 changes the effect
+    group's values while leaving the direct group untouched.  A near-black
+    target cannot be used as a probe, so fall back to white.
+    """
+    probe = target if max(target) >= 20 else (255, 255, 255)
+
+    set_static(fd, probe, 1, config["fallback_speed"])
+    low = decode_table(read_table(fd))
+    set_static(fd, probe, 5, config["fallback_speed"])
+    high = decode_table(read_table(fd))
+
+    effect: list[int] = []
+    direct: list[int] = []
+    for index in range(ENTRY_COUNT):
+        low_rgb = low[index][1:]
+        high_rgb = high[index][1:]
+        if low_rgb != high_rgb:
+            effect.append(index)
+        elif max(high_rgb) > 0:
+            direct.append(index)
+
+    if not effect:
+        # No LED responded to the static brightness change.  Treat the whole
+        # table as effect-controlled so the caller still applies the colour.
+        effect = list(range(ENTRY_COUNT))
+        direct = []
+
+    return effect, direct
+
+
+def verify_state(
+    fd: int,
+    effect_indices: list[int],
+    direct_indices: list[int],
+    direct_rgb: tuple[int, int, int],
+    target: tuple[int, int, int],
+    brightness: int,
+) -> bool:
+    try:
+        entries = decode_table(read_table(fd))
+    except ProtocolError:
+        return False
+
+    if effect_indices:
+        observed = dominant_colour(entries, effect_indices)
+        expected = expected_effect(target, brightness)
+        if observed is None:
+            return False
+        if sum(abs(observed[c] - expected[c]) for c in range(3)) > 18:
+            return False
+
+    if direct_indices:
+        observed = dominant_colour(entries, direct_indices)
+        if observed is None:
+            return False
+        if sum(abs(observed[c] - direct_rgb[c]) for c in range(3)) > 6:
+            return False
+
+    return True
+
+
+def cmd_read(args: argparse.Namespace) -> int:
+    config = load_config()
+    fd, path, transport = open_device(config)
+    if fd is None:
+        print(path, file=sys.stderr)
+        return 1
+    try:
+        if transport == "wireless":
+            print(f"device={path} transport=wireless")
+            print("LED readback is not available over the 2.4 GHz dongle.")
+            return 0
+        first = read_table(fd)
+        time.sleep(0.15)
+        second = read_table(fd)
+    finally:
+        os.close(fd)
+
+    entries = decode_table(first)
+    lit = [entry for entry in entries if max(entry[1:]) > 0]
+    print(f"device={path} transport=wired entries={len(entries)} lit={len(lit)} static={first == second}")
+    print("unique colours:", sorted({entry[1:] for entry in entries}))
+    for start in range(0, ENTRY_COUNT, 16):
+        row = " ".join(
+            f"{index}:{red:02x}{green:02x}{blue:02x}"
+            for index, red, green, blue in entries[start : start + 16]
+        )
+        print(f"{start:3d}-{start + 15:3d}: {row}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    config = load_config()
+    state = load_state()
+    theme_name = current_theme_slug() or state.get("theme") or "unknown"
+    try:
+        target, accent, source, (hue, lightness, saturation), chroma = resolve_target(
+            config, theme_name
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"theme error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"theme: {theme_name} ({THEME_DIR})")
+    print(f"accent: {hexstr(accent)} ({source})")
+    print(
+        f"target: {hexstr(target)} H={hue * 360:.1f} L={lightness:.3f} "
+        f"S={saturation:.3f} chroma={chroma}"
+    )
+    print(
+        f"config: min_saturation={config['min_saturation']:.2f} "
+        f"max_lightness={config['max_lightness']:.2f} "
+        f"match_direct_zone={config['match_direct_zone']} "
+        f"wireless_color_order={config['wireless_color_order']} "
+        f"theme_overrides={len(config.get('theme_overrides', {}))}"
+    )
+    print(f"device: {config['device']} (prefer={config['device_prefer']})")
+    print(
+        f"state: brightness={state.get('brightness', '?')} "
+        f"transport={state.get('transport', '?')} "
+        f"path={state.get('device_path', '?')} "
+        f"effect={len(state.get('effect_indices') or [])} "
+        f"direct={len(state.get('direct_indices') or [])} "
+        f"target={state.get('target', '?')} mode={state.get('mode', '?')}"
+    )
+
+    if args.read_table:
+        fd, path, transport = open_device(config)
+        if fd is None:
+            print(path, file=sys.stderr)
+            return 1
+        try:
+            if transport == "wireless":
+                print(f"device now: {path} transport=wireless")
+                print("LED readback is not available over the 2.4 GHz dongle.")
+                return 0
+            entries = decode_table(read_table(fd))
+        finally:
+            os.close(fd)
+        effect = list(state.get("effect_indices") or [])
+        direct = list(state.get("direct_indices") or [])
+        if effect:
+            print(f"effect now: {dominant_colour(entries, effect)}")
+        if direct:
+            print(f"direct now: {dominant_colour(entries, direct)}")
+        if effect and state.get("target_rgb"):
+            last = tuple(int(c) for c in state["target_rgb"])
+            print(
+                "inferred brightness:",
+                infer_brightness(entries, effect, last, int(state.get("brightness", 5))),
+            )
+    return 0
+
+
+def cmd_set_brightness(args: argparse.Namespace) -> int:
+    config = load_config()
+    lock = acquire_lock()
+    if lock is None:
+        print("another instance holds the lock", file=sys.stderr)
+        return 1
+    try:
+        state = load_state()
+        theme_name = current_theme_slug() or state.get("theme")
+        target, _, _, _, _ = resolve_target(config, theme_name)
+        if isinstance(state.get("target_rgb"), list) and len(state["target_rgb"]) == 3:
+            target = tuple(int(c) for c in state["target_rgb"])  # type: ignore[assignment]
+        brightness = min(max(args.brightness, 1), 5)
+
+        fd, path, transport = open_device(config)
+        if fd is None:
+            print(path, file=sys.stderr)
+            return 1
+        try:
+            if transport == "wireless":
+                apply_wireless(
+                    fd, target, brightness, config["fallback_speed"],
+                    config["wireless_color_order"],
+                )
+            else:
+                set_static(fd, target, brightness, config["fallback_speed"])
+                direct = list(state.get("direct_indices") or [])
+                if direct:
+                    entries = decode_table(read_table(fd))
+                    direct_rgb = scale_rgb(target, brightness)
+                    if config["match_direct_zone"]:
+                        matched = dominant_colour(entries, list(state.get("effect_indices") or []))
+                        if matched is not None:
+                            direct_rgb = matched
+                    new_entries = [tuple(entry) for entry in entries]
+                    for index in direct:
+                        new_entries[index] = (entries[index][0], *direct_rgb)
+                    write_direct(fd, new_entries)  # type: ignore[arg-type]
+        finally:
+            os.close(fd)
+
+        state["brightness"] = brightness
+        state["transport"] = transport
+        state["device_path"] = path
+        state["updated_at"] = now_iso()
+        save_state(state)
+        log(
+            f"set-brightness={brightness} target={hexstr(target)} "
+            f"transport={transport} path={path} result=ok"
+        )
+        print(f"brightness set to {brightness}; target {hexstr(target)} ({transport})")
+        return 0
+    finally:
+        release_lock(lock)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="omarchy-keyboard-accent",
+        description="Follow the active Omarchy theme on an AULA F75 Max keyboard.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    apply_parser = subparsers.add_parser("apply", help="apply the current theme colour")
+    apply_parser.add_argument("theme", nargs="?", help="theme name for logging")
+    apply_parser.add_argument("--dry-run", action="store_true", help="print the target colour only")
+    apply_parser.add_argument("--color", help="override the theme accent")
+    apply_parser.add_argument(
+        "--exact",
+        action="store_true",
+        help="with --color, use the colour as written instead of the saturation/lightness transform",
+    )
+    apply_parser.add_argument("--brightness", type=int, help="force a brightness level 1-5")
+    apply_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="read the LED table back after writing (costs ~0.7 s on the wired transport)",
+    )
+    apply_parser.set_defaults(func=cmd_apply)
+
+    read_parser = subparsers.add_parser("read", help="dump the live LED table")
+    read_parser.set_defaults(func=cmd_read)
+
+    status_parser = subparsers.add_parser("status", help="show theme, target and state")
+    status_parser.add_argument("--read-table", action="store_true", help="also read the live table")
+    status_parser.set_defaults(func=cmd_status)
+
+    brightness_parser = subparsers.add_parser("set-brightness", help="set brightness 1-5")
+    brightness_parser.add_argument("brightness", type=int)
+    brightness_parser.set_defaults(func=cmd_set_brightness)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

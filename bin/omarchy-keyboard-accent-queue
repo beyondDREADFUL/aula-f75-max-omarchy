@@ -1,0 +1,49 @@
+#!/bin/bash
+# Single-flight, debounced dispatch for the AULA F75 Max theme sync.
+#
+# The theme-set hook must not block on the keyboard's HID settle times.  This
+# script writes the newest request token and returns immediately.  A detached
+# worker holds worker.lock, applies the current theme, and then re-checks the
+# token.  Only one worker runs at a time, so a rapid theme preview cannot
+# build up a backlog of stale applies.
+
+set -u
+
+STATE_DIR="$HOME/.local/state/omarchy/keyboard-accent"
+CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
+
+mkdir -p "$STATE_DIR" || exit 0
+
+token="$(date +%s%N)" || exit 0
+tmp="$STATE_DIR/request.$$.$token"
+printf '%s\n' "$token" > "$tmp" 2>/dev/null || exit 0
+mv -f "$tmp" "$STATE_DIR/request" 2>/dev/null || exit 0
+
+exec 9>"$STATE_DIR/worker.lock"
+
+# A worker is already draining this burst; it will see the new token.
+if ! flock -n 9; then
+    exit 0
+fi
+
+# We own the worker lock.  Detach a worker that inherits fd 9, so the lock is
+# held for the worker's lifetime and released only when the worker exits.
+(
+    while :; do
+        # Let a quick burst of theme changes settle before touching the
+        # keyboard, so the first apply already uses the newest token.
+        sleep 0.35
+        current="$(cat "$STATE_DIR/request" 2>/dev/null)"
+        "$CONTROLLER" apply
+        printf '%s\n' "$current" > "$STATE_DIR/applied" 2>/dev/null || true
+
+        # Release before the final check: a request arriving at the exit
+        # boundary can then start a fresh worker instead of being lost.
+        flock -u 9
+        latest="$(cat "$STATE_DIR/request" 2>/dev/null)"
+        [ "$latest" = "$current" ] && exit 0
+
+        # A newer request arrived.  Reacquire unless another worker took over.
+        flock -n 9 || exit 0
+    done
+) >/dev/null 2>&1 &

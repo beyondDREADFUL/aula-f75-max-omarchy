@@ -1,0 +1,107 @@
+# AULA F75 Max keyboard accent.
+#
+# On the wired keyboard, the key LEDs use the direct per-key frame, which has
+# no brightness byte.  The underglow/effect LEDs use the static effect command,
+# which does.  This script reads the live LED table, infers the current
+# brightness level from the effect group, and applies it again on every theme
+# change.
+#
+# On the 2.4 GHz dongle there is no documented per-key frame or LED readback.
+# The script uses the firmware's static effect, so the whole LED set receives
+# one accent and the last stored brightness level is reused.
+
+[color]
+# Follow the active Omarchy theme's accent.
+mode = "theme"
+
+# Used only when mode = "fixed".  Still passes through min_saturation and
+# max_lightness, exactly like a theme accent.
+fixed_color = "#F34820"
+
+# Saturation floor.  Theme accents are often muted warm greys; a floor of
+# 0.90 turns Last Horizon's #b59790 into a clearly visible coral instead of
+# a near-white.  Set lower for a softer look, higher for more punch.
+min_saturation = 0.90
+
+# Lightness range.  The upper bound keeps light pastel accents from washing
+# out; the lower bound keeps very dark accents visible.  The LED diffuser
+# makes the keys read lighter than the source colour, so this is set a
+# little below the monitor swatch to compensate.
+max_lightness = 0.54
+min_lightness = 0.35
+
+[device]
+# "auto" detects either the wired 0xFF13 command interface (0c45:800a)
+# or the 2.4 GHz dongle command interface (05ac:024f, usage page 0xFF60).
+# You can still set an explicit /dev/input/by-id/... path if you prefer.
+path = "auto"
+
+# When both transports are present, "auto" and "wired" use the wired
+# keyboard first.  Set this to "wireless" if the cable is connected only for
+# charging while the keyboard is actually being used over 2.4 GHz.
+prefer = "auto"
+
+[lighting]
+# Brightness used only on the first run, before the live table can tell us
+# the current level.  Levels are 1-5.
+default_brightness = 5
+
+# Static-effect speed (1-5).  Static mode ignores it.
+speed = 3
+
+# Dongle colour byte order.  Most reverse-engineering sources use BGR
+# ([4]=B, [5]=G, [6]=R); use "rgb" if red and blue appear swapped on hardware.
+# This F75 Max unit was verified on real hardware to need "rgb".
+wireless_color_order = "rgb"
+
+# false: key LEDs get the saturated colour scaled to the current brightness
+#        level (at level 5 this is the raw colour).
+# true:  key LEDs exactly match the effect group's calibrated output (most
+#        uniform, but slightly less red/saturated).
+match_direct_zone = false
+
+[theme_overrides]
+# One explicit colour per installed theme, so the keyboard never depends on a
+# transform that may be retuned later.  These bypass min_saturation/
+# max_lightness and use the hex as-is.  Keys use this value (scaled by
+# brightness); the underglow is still calibrated by the firmware.  Keys are
+# theme slugs, not display names.  Most values are the transform's vetted
+# output; the ones marked "hand-tuned" replace a hue that did not suit the
+# palette.  Re-run this list when you add or remove a theme.
+# Bundled Omarchy themes
+catppuccin-latte = "#8839EF"  # brand colour, kept from before
+catppuccin = "#1E70F5"
+ethereal = "#202CF3"
+everforest = "#20F3D7"
+flexoki-light = "#0A5CBC"
+gruvbox = "#E8891A"  # hand-tuned
+hackerman = "#1CF84B"
+kanagawa = "#F3D420"
+last-horizon = "#F34820"
+lumon = "#20A8F3"
+lupine = "#2059F3"
+matte-black = "#E78E0C"
+miasma = "#A1C30A"
+nord = "#88C0D0"  # brand colour, kept from before
+osaka-jade = "#0BD97B"
+retro-82 = "#F77E1C"
+ristretto = "#F34F20"
+rose-pine = "#E58FA8"  # hand-tuned
+solitude = "#6E93C4"  # hand-tuned
+tokyo-night = "#2064F3"
+vantablack = "#8FA6B8"  # hand-tuned
+white = "#E6E1D8"  # hand-tuned
+
+# User themes in ~/.config/omarchy/themes
+a-building-with-a-flag-on-the-roof-palette = "#2081F3"
+aether = "#F34B20"
+batman = "#1754F3"
+catppuccin-dark = "#1E70F5"
+felix = "#FF5E14"
+fireside = "#F09A28"  # hand-tuned
+ign-batman-aether = "#205FF3"
+lavender = "#8120F3"
+nebula = "#6E1BF3"
+red-samurai-palette = "#F71D28"
+tokyoled = "#2064F3"
+tsukiyo = "#20C0F3"
