@@ -6,6 +6,7 @@
 - Fixed a brief flash of an old colour on the effect LEDs at every wired apply:
   the frame now carries the predicted effect colour instead of stale cached bytes.
 - Widget popup no longer overflows when the hint text is showing.
+- The popup now applies colours exactly as chosen (always `--exact`); the Exact colour switch and the adjustment hint are gone. Theme accents without an override are still adjusted.
 - Popup choices (presets, THEME swatch) now only take effect when Apply is pressed. The hint and message lines have a fixed height, so the popup no longer resizes or flashes a stale preview.
 - Clicking a preset now fills the hex field, so pressing Apply again repeats the colour you see instead of the stale field text.
 

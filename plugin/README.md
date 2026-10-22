@@ -7,15 +7,16 @@ Omarchy bar widget for the AULA F75 Max accent colour, built on
   theme, ringed means a custom colour is set.
 - Left-click opens the picker. Right-click returns to the theme colour.
 - The picker shows the keyboard and theme colours side by side, presets drawn
-  in the colour the keys will really show, a hex field with a live preview, and
-  an Exact colour switch.
+  in the colour the keys will really show, a hex field with a live preview, a
+  Keep this colour switch, and Apply / Reset to theme. Nothing changes on the
+  keyboard until you press Apply.
 
-## Exact colour
+## Colours are applied as written
 
-By default a picked colour goes through the controller's saturation and
-lightness limits, the same ones theme accents get. That keeps accents vivid but
-tints neutrals: white becomes gold. Turn on Exact colour to send the colour as
-written (`omarchy-keyboard-accent apply --exact --color HEX`).
+A colour picked here is sent exactly as chosen
+(`omarchy-keyboard-accent apply --exact --color HEX`). Theme accents that have
+no override in the config still get the controller's saturation and lightness
+limits, which keep muted accents vivid.
 
 The underglow is calibrated by the keyboard firmware separately and cannot be
 set exactly. Pure white keys come with a cyan-tinted underglow.

@@ -733,8 +733,9 @@ match the theme. If red and blue are swapped, set
 - **The fast path assumes the zone partition is complete** (83 + 61 = 144).
   If a future firmware exposes a different split, the controller falls back
   to the read-based order automatically.
-- **Exact colour is opt-in.** The transform keeps accents vivid but tints
-  neutrals (white becomes gold), so `--exact` skips it. Underglow is
+- **Exact colour is the widget default, opt-in on the CLI.** The transform keeps
+  theme accents vivid but tints neutrals (white becomes gold), so the widget
+  always sends `--exact`, and the CLI offers it as a flag. Underglow is
   firmware-calibrated either way and cannot be set exactly.
 - **The widget polls nothing.** It refreshes on load, when the picker opens,
   after each action, and 2.5 s after the shell's accent changes.
@@ -752,7 +753,9 @@ the bar showing the keyboard's current colour and a popup picker.
   theme colour.
 - **Popup**: keyboard and theme swatches (click THEME to reset), seven presets
   drawn in the colour the keys will really show, a hex field with live
-  preview, an **Exact colour** switch, and Apply / Reset to theme.
+  preview, a **Keep this colour** switch, and Apply / Reset to theme. Nothing
+  is applied until Apply is pressed. Colours chosen here are always sent with
+  `--exact`.
 - **Matching**: keyboard and theme count as matching when their summed
   per-channel difference is at most 3, because controller rounding can leave a
   colour a step or two off.

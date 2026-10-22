@@ -25,12 +25,10 @@ Panel {
   property bool pinned: false        // a pinned colour overrides the theme
 
   // Picker state.
-  property bool exact: false          // use the colour as written
   property bool keep: false           // pin the colour across theme changes
   property bool pickTheme: false      // Apply returns to the theme colour
   property var previews: ({})         // typed hex -> colour the keys will show
   property string previewHex: ""      // same, for the hex field
-  property string previewFor: ""      // the typed colour previewHex belongs to
   property string message: ""
   property bool failed: false
 
@@ -123,8 +121,10 @@ Panel {
 
   // ---- actions ------------------------------------------------------------
 
+  // Colours picked here are applied as written, without the theme's
+  // saturation and lightness limits.
   function exactArgs() {
-    return root.exact ? ["--exact"] : []
+    return ["--exact"]
   }
 
   function report(result, success) {
@@ -160,14 +160,12 @@ Panel {
 
   function requestPreview(text) {
     var hex = root.normalize(text)
-    root.previewFor = ""
     if (hex === "") {
       root.previewHex = ""
       return
     }
     root.enqueue(["preview"].concat(root.exactArgs(), [hex]), "preview", function(result) {
       root.previewHex = result.ok ? String(result.keyboard).toUpperCase() : ""
-      root.previewFor = hex
     })
   }
 
@@ -202,11 +200,6 @@ Panel {
       return
     }
     root.setColour(hex)
-  }
-
-  onExactChanged: {
-    root.loadPreviews()
-    root.requestPreview(hexInput.text)
   }
 
   onOpenedChanged: {
@@ -480,79 +473,6 @@ Panel {
             color: root.previewHex !== "" ? root.previewHex : "transparent"
             border.width: Math.max(1, Style.space(1))
             border.color: Qt.darker(root.fg, 1.8)
-          }
-        }
-
-        Text {
-          width: parent.width
-          readonly property bool shown: root.previewHex !== "" && root.previewFor === root.normalize(hexInput.text) && root.previewHex !== root.previewFor
-          height: lineMetrics.height * 2
-          opacity: shown ? 1 : 0
-          text: shown ? "Keys will show " + root.previewHex + ", adjusted by the theme's colour limits. Turn on Exact colour to use it as written." : " "
-          wrapMode: Text.WordWrap
-          maximumLineCount: 2
-          elide: Text.ElideRight
-          color: root.dim
-          font.family: root.family
-          font.pixelSize: Style.font.caption
-        }
-
-        // Exact colour switch.
-        Item {
-          width: parent.width
-          implicitHeight: Math.max(exactLabels.implicitHeight, exactSwitch.height)
-
-          Column {
-            id: exactLabels
-            anchors.left: parent.left
-            anchors.right: exactSwitch.left
-            anchors.rightMargin: Style.space(10)
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(2)
-
-            Text {
-              width: parent.width
-              text: "Exact colour"
-              color: root.fg
-              font.family: root.family
-              font.pixelSize: Style.font.caption
-              font.bold: true
-            }
-
-            Text {
-              width: parent.width
-              text: "Skip the theme's saturation limits so whites and greys stay neutral"
-              wrapMode: Text.WordWrap
-              color: root.dim
-              font.family: root.family
-              font.pixelSize: Style.font.caption
-            }
-          }
-
-          Rectangle {
-            id: exactSwitch
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(36)
-            height: Style.space(20)
-            radius: height / 2
-            color: root.exact ? root.fg : "transparent"
-            border.width: Math.max(1, Style.space(1))
-            border.color: root.fg
-
-            Rectangle {
-              width: parent.height - Style.space(6)
-              height: width
-              radius: width / 2
-              anchors.verticalCenter: parent.verticalCenter
-              x: root.exact ? parent.width - width - Style.space(3) : Style.space(3)
-              color: root.exact ? root.bg : root.fg
-            }
-
-            MouseArea {
-              anchors.fill: parent
-              onClicked: root.exact = !root.exact
-            }
           }
         }
 
