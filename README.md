@@ -28,7 +28,7 @@ cd omarchy-aula-f75-max-accent
 ./install.sh
 ```
 
-It asks for sudo for the udev rule, the systemd unit and the `aula` group. Log out and back in once so the group applies, then:
+`./install.sh --dry-run` prints the root commands without running them. It asks for sudo for the udev rule, the systemd unit and the `aula` group. Log out and back in once so the group applies, then:
 
 ```bash
 omarchy-keyboard-accent apply
