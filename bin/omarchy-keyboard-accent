@@ -68,6 +68,7 @@ CONFIG_FILE = HOME / ".config/omarchy/keyboard-accent/config.toml"
 STATE_DIR = HOME / ".local/state/omarchy/keyboard-accent"
 STATE_FILE = STATE_DIR / "state.json"
 LOCK_FILE = STATE_DIR / "lock"
+PIN_FILE = STATE_DIR / "pin.json"
 LOG_FILE = STATE_DIR / "keyboard-accent.log"
 
 DEFAULT_DEVICE = "auto"
@@ -253,6 +254,24 @@ def save_state(state: dict) -> None:
     tmp.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
     os.replace(tmp, STATE_FILE)
+
+
+def load_pin() -> dict | None:
+    """The pinned colour, if any: {"color": "#RRGGBB", "exact": bool}."""
+    try:
+        pin = json.loads(PIN_FILE.read_text(encoding="utf-8"))
+        parse_color(pin["color"])
+        return {"color": pin["color"], "exact": bool(pin.get("exact"))}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def save_pin(color: str, exact: bool) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = PIN_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"color": color, "exact": exact}) + "\n", encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, PIN_FILE)
 
 
 def acquire_lock(timeout: float = 15.0) -> int | None:
@@ -983,8 +1002,18 @@ def _apply_once(args: argparse.Namespace) -> int:
     try:
         state = load_state()
         theme_name = current_theme_slug() or args.theme or state.get("theme") or "unknown"
+        color, exact = args.color, getattr(args, "exact", False)
+        if color and getattr(args, "pin", False) and not args.dry_run:
+            parse_color(color)
+            save_pin(color, exact)
+        elif not color:
+            # A pinned colour replaces the theme accent on every plain apply
+            # (theme change, login, hotplug) until it is cleared with `unpin`.
+            pin = load_pin()
+            if pin:
+                color, exact = pin["color"], pin["exact"]
         target, accent, accent_source, (hue, lightness, saturation), chroma = resolve_target(
-            config, theme_name, args.color, getattr(args, "exact", False)
+            config, theme_name, color, exact
         )
         target_hex = hexstr(target)
 
@@ -1079,6 +1108,13 @@ def _apply_once(args: argparse.Namespace) -> int:
                 direct_rgb = scale_rgb(target, brightness)
                 for index in direct_indices:
                     frame[index] = (frame[index][0], *direct_rgb)
+                # The frame write also carries the effect entries.  Cached
+                # ones can be stale, which flashes an old colour on those LEDs
+                # until set_static runs, so write the predicted calibrated
+                # colour instead; set_static then corrects it by a step or two.
+                effect_rgb = expected_effect(target, brightness)
+                for index in effect_indices:
+                    frame[index] = (frame[index][0], *effect_rgb)
 
                 try:
                     write_direct(fd, frame)  # type: ignore[arg-type]
@@ -1294,6 +1330,14 @@ def cmd_read(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_unpin(args: argparse.Namespace) -> int:
+    try:
+        PIN_FILE.unlink()
+    except FileNotFoundError:
+        pass
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     config = load_config()
     state = load_state()
@@ -1306,7 +1350,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"theme error: {exc}", file=sys.stderr)
         return 1
 
+    pin = load_pin()
     print(f"theme: {theme_name} ({THEME_DIR})")
+    if pin:
+        print(f"pin: {pin['color']}{' exact' if pin['exact'] else ''} (overrides the theme)")
     print(f"accent: {hexstr(accent)} ({source})")
     print(
         f"target: {hexstr(target)} H={hue * 360:.1f} L={lightness:.3f} "
@@ -1429,6 +1476,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="with --color, use the colour as written instead of the saturation/lightness transform",
     )
+    apply_parser.add_argument(
+        "--pin",
+        action="store_true",
+        help="with --color, keep this colour across theme changes and reconnects until `unpin`",
+    )
     apply_parser.add_argument("--brightness", type=int, help="force a brightness level 1-5")
     apply_parser.add_argument(
         "--verify",
@@ -1436,6 +1488,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="read the LED table back after writing (costs ~0.7 s on the wired transport)",
     )
     apply_parser.set_defaults(func=cmd_apply)
+
+    unpin_parser = subparsers.add_parser("unpin", help="clear the pinned colour (does not apply)")
+    unpin_parser.set_defaults(func=cmd_unpin)
 
     read_parser = subparsers.add_parser("read", help="dump the live LED table")
     read_parser.set_defaults(func=cmd_read)

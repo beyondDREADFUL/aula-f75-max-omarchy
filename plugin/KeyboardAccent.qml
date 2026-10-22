@@ -22,9 +22,11 @@ Panel {
   property string themeHex: ""
   property string keyboardHex: ""
   property bool matches: false
+  property bool pinned: false        // a pinned colour overrides the theme
 
   // Picker state.
   property bool exact: false          // use the colour as written
+  property bool keep: false           // pin the colour across theme changes
   property var previews: ({})         // typed hex -> colour the keys will show
   property string previewHex: ""      // same, for the hex field
   property string message: ""
@@ -38,7 +40,7 @@ Panel {
   readonly property string family: bar ? bar.fontFamily : "monospace"
   readonly property string tooltipText: keyboardHex === ""
     ? "Keyboard accent: no colour applied yet"
-    : "Keyboard " + keyboardHex + (matches ? " · matches theme" : " · custom (theme " + themeHex + ")")
+    : "Keyboard " + keyboardHex + (pinned ? " · pinned (theme " + themeHex + ")" : matches ? " · matches theme" : " · custom (theme " + themeHex + ")")
 
   implicitWidth: bar ? bar.barSize : 26
   implicitHeight: bar ? bar.barSize : 26
@@ -129,6 +131,8 @@ Panel {
       root.themeHex = String(result.theme).toUpperCase()
       root.keyboardHex = String(result.keyboard || "").toUpperCase()
       root.matches = result.matches === true
+      root.pinned = result.pinned === true
+      root.keep = root.pinned
     })
   }
 
@@ -158,7 +162,7 @@ Panel {
   function setColour(hex) {
     root.message = "Applying " + hex + "…"
     root.failed = false
-    root.enqueue(["apply"].concat(root.exactArgs(), [hex]), "", function(result) {
+    root.enqueue(["apply"].concat(root.exactArgs(), root.keep ? ["--pin"] : [], [hex]), "", function(result) {
       root.report(result, "Applied " + hex)
       Qt.callLater(root.refresh)
     })
@@ -290,7 +294,7 @@ Panel {
           }
 
           Text {
-            text: root.keyboardHex === "" ? "NOT SET" : (root.matches ? "MATCHES THEME" : "CUSTOM")
+            text: root.keyboardHex === "" ? "NOT SET" : (root.pinned ? "PINNED" : root.matches ? "MATCHES THEME" : "CUSTOM")
             color: root.dim
             font.family: root.family
             font.pixelSize: Style.font.caption
@@ -511,6 +515,65 @@ Panel {
             MouseArea {
               anchors.fill: parent
               onClicked: root.exact = !root.exact
+            }
+          }
+        }
+
+        // Keep-colour switch.
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(keepLabels.implicitHeight, keepSwitch.height)
+
+          Column {
+            id: keepLabels
+            anchors.left: parent.left
+            anchors.right: keepSwitch.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              text: "Keep this colour"
+              color: root.fg
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Text {
+              width: parent.width
+              text: "Stay on it through theme changes and reconnects, until you reset"
+              wrapMode: Text.WordWrap
+              color: root.dim
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Rectangle {
+            id: keepSwitch
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(36)
+            height: Style.space(20)
+            radius: height / 2
+            color: root.keep ? root.fg : "transparent"
+            border.width: Math.max(1, Style.space(1))
+            border.color: root.fg
+
+            Rectangle {
+              width: parent.height - Style.space(6)
+              height: width
+              radius: width / 2
+              anchors.verticalCenter: parent.verticalCenter
+              x: root.keep ? parent.width - width - Style.space(3) : Style.space(3)
+              color: root.keep ? root.bg : root.fg
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              onClicked: root.keep = !root.keep
             }
           }
         }

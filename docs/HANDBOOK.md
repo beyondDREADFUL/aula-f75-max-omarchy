@@ -164,10 +164,16 @@ ran `set_static`; the green survived and only the effect entries changed.
 `set_static` owns the effect zone,
 the direct frame owns the key zone, and the two do not overwrite each other.
 
-Why cached effect bytes are harmless: every one of the 144 entries is covered
-by one of the two index maps, the direct entries are rewritten from the
-current target, and the effect entries are rewritten by `set_static`. A stale
-cached effect byte cannot survive a successful apply.
+Why cached effect bytes are harmless in the end: every one of the 144 entries
+is covered by one of the two index maps, the direct entries are rewritten from
+the current target, and the effect entries are rewritten by `set_static`. A
+stale cached effect byte cannot survive a successful apply.
+
+They would still show for about 0.25 s, between the frame write and
+`set_static`, as a flash of an old colour on the effect LEDs. So before the
+frame is written its effect entries are set to `expected_effect(target,
+brightness)`, the predicted calibrated colour, and `set_static` then corrects
+them by a step or two.
 
 ### 5.3 Wired apply — fallback path
 
@@ -206,6 +212,10 @@ failed page-0 read. This is the original conservative order:
 
 ### 6.1 Resolution order
 
+0. A **pinned colour** (`apply --pin --color HEX`, stored in
+   `~/.local/state/omarchy/keyboard-accent/pin.json`) replaces the theme accent
+   on every plain `apply`: theme change, login, hotplug. `unpin` clears it.
+   `apply --color` without `--pin` is a one-off and does not touch the pin.
 1. `apply --color HEX` — explicit one-off colour; goes through the transform
    unless `--exact` is given, which uses the colour as written
    (`accent_source` becomes `override-exact`). The widget's "Exact colour"
@@ -476,6 +486,12 @@ omarchy-keyboard-accent apply --color '#00A0FF' --verify
 # one-off colour exactly as written, no transform (white stays white)
 omarchy-keyboard-accent apply --exact --color '#FFFFFF'
 
+# keep a colour across theme changes and reconnects
+omarchy-keyboard-accent apply --pin --color '#FF0000'
+
+# clear the pin (does not apply; run `apply` afterwards)
+omarchy-keyboard-accent unpin
+
 # force a brightness level for this apply (persists it)
 omarchy-keyboard-accent apply --brightness 3
 
@@ -741,10 +757,13 @@ the bar showing the keyboard's current colour and a popup picker.
   per-channel difference is at most 3, because controller rounding can leave a
   colour a step or two off.
 - **Custom colours** last until the next theme change, when the hook sets the
-  theme colour again.
+  theme colour again, unless **Keep this colour** is on. That pins the colour
+  (status line shows PINNED) until you press Reset to theme or right-click the
+  dot. Applying a colour with the switch off also clears an earlier pin.
 - **Helper** `bin/keyboard-accent` wraps the controller and prints one line of
-  JSON per command: `status`, `targets [--exact] #HEX...` (dry run, what the
-  keys would show), `preview`, `apply [--exact] #HEX`, `reset`. Errors are
+  JSON per command: `status` (includes `pinned` and `pin`), `targets [--exact] #HEX...` (dry run,
+  what the keys would show), `preview`, `apply [--exact] [--pin] #HEX`, `reset`
+  (clears the pin). Errors are
   `{"ok":false,"error":...}`.
 - **IPC**: `omarchy-shell beyond.keyboard-accent toggle` (also `open`, `close`,
   `refresh`, `reset`).

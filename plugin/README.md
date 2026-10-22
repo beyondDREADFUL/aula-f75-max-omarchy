@@ -21,7 +21,10 @@ The underglow is calibrated by the keyboard firmware separately and cannot be
 set exactly. Pure white keys come with a cyan-tinted underglow.
 
 A custom colour lasts until the next theme change, when the theme hook sets the
-keyboard back to the theme colour.
+keyboard back to the theme colour. Turn on **Keep this colour** to pin it
+instead: it then survives theme changes, login and reconnects until you press
+Reset to theme (or right-click the dot). Open the picker from a keybinding with
+`omarchy-shell beyond.keyboard-accent toggle`.
 
 ## How it stays current
 

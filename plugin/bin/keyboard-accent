@@ -2,19 +2,23 @@
 # Helper for the Keyboard Accent bar widget. Wraps omarchy-keyboard-accent.
 # Every command prints one line of JSON, so the widget needs no exit codes.
 #
-#   status                      theme, keyboard colour, whether they match
-#   targets [--exact] #HEX...   colour the keys would show for each, no writes
-#   preview [--exact] #HEX      same for a single colour
-#   apply   [--exact] #HEX      set the keyboard (until the next theme change)
-#   reset                       return the keyboard to the theme colour
+#   status                              theme, keyboard colour, match, pin
+#   targets [--exact] #HEX...           colour the keys would show for each, no writes
+#   preview [--exact] #HEX              same for a single colour
+#   apply   [--exact] [--pin] #HEX      set the keyboard
+#   reset                               clear any pin, return to the theme colour
 #
 # --exact uses the colour as written. Without it the controller applies the
 # theme's saturation and lightness limits, which tint neutrals such as white.
+# --pin keeps the colour across theme changes and reconnects; without it the
+# colour lasts until the next theme change and any earlier pin is cleared.
 
 set -u
 
 CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
-STATE="$HOME/.local/state/omarchy/keyboard-accent/state.json"
+STATE_DIR="$HOME/.local/state/omarchy/keyboard-accent"
+STATE="$STATE_DIR/state.json"
+PIN="$STATE_DIR/pin.json"
 
 fail() {
     jq -nc --arg error "$1" '{ok: false, error: $error}'
@@ -43,10 +47,15 @@ command=${1:-}
 [ $# -gt 0 ] && shift
 
 exact=()
-if [ "${1:-}" = "--exact" ]; then
-    exact=(--exact)
+pin=false
+while [ $# -gt 0 ]; do
+    case "$1" in
+    --exact) exact=(--exact) ;;
+    --pin) pin=true ;;
+    *) break ;;
+    esac
     shift
-fi
+done
 
 case "$command" in
 status)
@@ -62,13 +71,16 @@ status)
     if valid_hex "$keyboard" && [ "$(hex_distance "$theme" "$keyboard")" -le 3 ]; then
         matches=true
     fi
-    jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" \
+    pinned=$(jq -r '.color // empty' "$PIN" 2>/dev/null)
+    jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
         --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
         matches: $matches,
         exact: ($source == "override-exact"),
+        pinned: ($pinned != ""),
+        pin: $pinned,
         brightness: $brightness,
         transport: $transport
     }'
@@ -91,11 +103,14 @@ preview)
 
 apply)
     valid_hex "${1:-}" || fail "invalid colour"
-    "$CONTROLLER" apply ${exact[@]+"${exact[@]}"} --color "$1" >/dev/null 2>&1 || fail "keyboard apply failed"
+    pin_args=()
+    if $pin; then pin_args=(--pin); else "$CONTROLLER" unpin 2>/dev/null; fi
+    "$CONTROLLER" apply ${exact[@]+"${exact[@]}"} ${pin_args[@]+"${pin_args[@]}"} --color "$1" >/dev/null 2>&1 || fail "keyboard apply failed"
     jq -nc '{ok: true}'
     ;;
 
 reset)
+    "$CONTROLLER" unpin 2>/dev/null
     "$CONTROLLER" apply >/dev/null 2>&1 || fail "keyboard apply failed"
     jq -nc '{ok: true}'
     ;;

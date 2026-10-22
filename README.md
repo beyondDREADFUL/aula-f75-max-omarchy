@@ -41,10 +41,11 @@ omarchy plugin enable beyond.keyboard-accent && omarchy restart shell
 omarchy-keyboard-accent status
 omarchy-keyboard-accent apply --color '#FF0000'          # until next theme change
 omarchy-keyboard-accent apply --exact --color '#FFFFFF'  # skip the vividness transform
-omarchy-keyboard-accent apply                            # back to the theme colour
+omarchy-keyboard-accent apply --pin --color '#FF0000'    # keep it across theme changes
+omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the theme colour
 ```
 
-The widget: left-click opens the picker, right-click resets to the theme.
+The widget: left-click opens the picker, right-click resets to the theme. Switch on "Keep this colour" to pin a colour through theme changes. `omarchy-shell beyond.keyboard-accent toggle` opens it from a keybinding.
 
 ## Limits
 
