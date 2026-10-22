@@ -386,7 +386,11 @@ Panel {
 
               MouseArea {
                 anchors.fill: parent
-                onClicked: root.setColour(modelData)
+                onClicked: {
+                  hexInput.text = modelData.replace("#", "")
+                  root.requestPreview(hexInput.text)
+                  root.setColour(modelData)
+                }
               }
             }
           }

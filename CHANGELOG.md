@@ -6,6 +6,7 @@
 - Fixed a brief flash of an old colour on the effect LEDs at every wired apply:
   the frame now carries the predicted effect colour instead of stale cached bytes.
 - Widget popup no longer overflows when the hint text is showing.
+- Clicking a preset now fills the hex field, so pressing Apply again repeats the colour you see instead of the stale field text.
 
 ## 2026-10-21
 - Wired controller, hooks, queue, locking, brightness preservation,
