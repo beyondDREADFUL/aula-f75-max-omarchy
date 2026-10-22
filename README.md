@@ -64,6 +64,17 @@ omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the t
 
 The widget: left-click opens the picker, right-click resets to the theme. Switch on "Keep this colour" to pin a colour through theme changes. `omarchy-shell beyond.keyboard-accent toggle` opens it from a keybinding.
 
+## Requirements
+
+- An AULA F75 Max (wired USB or the 2.4 GHz dongle) and Omarchy.
+- `python3` (controller), `jq` (widget helper), `sudo` once for `install.sh`.
+- `install.sh` needs root for three things: a udev rule, a systemd one-shot unit, and adding you to a system group `aula` so the keyboard's HID node is writable without root. `./install.sh --dry-run` prints them; `./uninstall.sh` removes them (the group stays).
+- It never overwrites an existing `~/.config/omarchy/keyboard-accent/config.toml`.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
+
 ## Tests
 
 ```sh
