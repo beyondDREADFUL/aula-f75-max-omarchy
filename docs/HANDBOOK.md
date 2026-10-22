@@ -775,6 +775,62 @@ the bar showing the keyboard's current colour and a popup picker.
 
 ---
 
+## 19. Experiments that were not adopted
+
+Animated theme changes were tried on the wired keyboard on 2026-10-22 and
+rejected. Recorded here so they are not repeated.
+
+**Cross-fade with `set_static`.** Stepping the static colour from the old accent
+to the new one works, but is never smooth:
+
+- Every step needs the full sequence (`04 18`, `04 13`, data packet, `04 02`
+  with acks). Streaming bare data packets fails the commit ack.
+- With the controller's timing (10 ms before reports, 20 ms before ack polls)
+  a step takes about 0.1 s, roughly 10 steps per second. This is the fastest
+  rate at which the keyboard visibly shows each step. A 1 s fade shows clear
+  steps; a 2 s fade is better but slow.
+- Shorter waits are accepted by the keyboard (a readback after each step showed
+  the right colour at 5/10, 3/5 and 2/3 ms) but nothing is displayed in
+  between: the colours jump. The keyboard appears to redraw about 10 times per
+  second and merges faster updates.
+- At 1/2 ms and below the USB transfers time out (`errno 110`). Polling for an
+  ack before sleeping also times out, so the sleep before the first poll is
+  required. The keyboard recovered every time.
+- A front-loaded easing curve did not hide the steps.
+
+**Per-key wave.** The direct per-key frame is accepted and reads back
+correctly, but is not visible while the static effect is active. A wave built
+from per-key frames showed nothing. There may be a separate per-key mode, but
+it is not documented for this keyboard and was not searched for further.
+
+**Firmware effect modes.** The first byte of the data packet sent by
+`set_static` is the mode; the controller only uses `1` (static). Observed on
+the wired keyboard at speed 3, direction 0, in the theme colour:
+
+| Mode | Behaviour |
+|---|---|
+| 0 | unclear (lights dismissed oddly) |
+| 1 | static, all on |
+| 2 | reactive: a pressed key lights up, then fades |
+| 3 | reverse of 2: a pressed key turns off, then fades back |
+| 7 | pulses |
+| 9 | wave from the centre outwards |
+| 11 | sweep right to left |
+| 12 | circular |
+| 15 | wave outwards from the pressed key |
+
+Modes 4 to 6, 8, 10, 13, 14 and above 15 were not described. The modes are
+animations in their own right: switching to one replaces the old colour, so
+neither a wave (9) nor a pulse (7) gives a transition from the old accent to the
+new one. Each landing back on static was also a cut. Reactive modes (2, 15)
+could be an opt-in extra in the theme colour, but are not implemented.
+
+**Decision.** No animation is built into the controller. The keyboard's update
+rate caps smoothness, and a fade would hold the device for 1 to 2 s on every
+theme change.
+
+---
+
 ## Appendix A — state file
 
 `~/.local/state/omarchy/keyboard-accent/state.json` (table cache shortened):

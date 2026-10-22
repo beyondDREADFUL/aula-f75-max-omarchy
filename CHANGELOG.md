@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-10-22 (later)
+- Investigated animated theme changes (cross-fade, per-key wave, firmware modes); not adopted. Findings are in the handbook (section 19).
 - Pinned colours: `apply --pin --color HEX` keeps a colour across theme changes,
   login and reconnects until `unpin`. The widget has a Keep this colour switch.
 - Fixed a brief flash of an old colour on the effect LEDs at every wired apply:
