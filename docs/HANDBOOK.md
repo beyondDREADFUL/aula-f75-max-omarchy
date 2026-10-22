@@ -766,7 +766,7 @@ match the theme. If red and blue are swapped, set
 
 ## 18. Bar widget
 
-Plugin `beyond.keyboard-accent` (`plugin/` in the repository). It adds a dot to
+Plugin `beyond.keyboard-accent` (`manifest.json`, `KeyboardAccent.qml` and `bin/keyboard-accent` at the repository root). It adds a dot to
 the bar showing the keyboard's current colour and a popup picker.
 
 - **Dot**: filled when the keyboard matches the theme accent, ringed when a

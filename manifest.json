@@ -4,6 +4,7 @@
   "name": "Keyboard Accent",
   "version": "0.2.0",
   "author": "beyond",
+  "license": "MIT",
   "description": "Shows the keyboard's current accent colour, lets you pick another, and shows whether it matches the theme",
   "kinds": [
     "bar-widget"

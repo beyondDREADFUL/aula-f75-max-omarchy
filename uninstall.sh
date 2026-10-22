@@ -3,6 +3,9 @@
 # unless you pass --purge. The 'aula' group is left in place.
 # Pass --dry-run to print what would be removed without removing it.
 set -eu
+# Everything is inside main so bash reads the whole script before it runs; this
+# matters when the repo is itself the installed plugin folder and gets deleted.
+main() {
 dry=false; purge=false
 for arg in "$@"; do
     case "$arg" in
@@ -43,3 +46,6 @@ fi
 
 echo "Removed. Restart the shell to drop the bar widget: omarchy restart shell"
 echo "The 'aula' group was left in place; remove it with: sudo groupdel aula"
+}
+main "$@"
+exit $?

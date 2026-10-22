@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/88de778c-60dc-4bb4-acfe-c5b5afe39300
 | `system/65-aula-f75-max.rules` | `/etc/udev/rules.d` | Grants access to the keyboard's HID node and triggers an apply on plug/unplug. |
 | `system/aula-keyboard-accent.service.in` | `/etc/systemd/system` | One-shot apply service started by udev. |
 | `config.example.toml` | `~/.config/omarchy/keyboard-accent/config.toml` | Saturation and lightness limits, per-theme overrides. Not overwritten if it exists. |
-| `plugin/` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | Bar widget (needs `jq`). |
+| `manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | Bar widget (needs `jq` and the controller above). See [docs/WIDGET.md](docs/WIDGET.md). |
 | `docs/HANDBOOK.md` | | Protocol notes, design, troubleshooting. |
 | `install.sh`, `uninstall.sh` | | Install and remove everything above. Both take `--dry-run`. |
 | `CHANGELOG.md` | | What changed and when. |
@@ -39,6 +39,8 @@ cd omarchy-aula-f75-max-accent
 omarchy-keyboard-accent apply
 omarchy plugin enable beyond.keyboard-accent && omarchy restart shell
 ```
+
+The bar widget can also be added on its own with `omarchy plugin add https://github.com/beyondDREADFUL/omarchy-aula-f75-max-accent --enable`, but it only drives the controller: run `./install.sh` from the cloned folder (`~/.config/omarchy/plugins/beyond.keyboard-accent`) first, or it will show nothing.
 
 ## Uninstall
 

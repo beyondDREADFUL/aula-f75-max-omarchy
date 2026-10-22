@@ -24,7 +24,12 @@ done
 cfg="$HOME/.config/omarchy/keyboard-accent/config.toml"
 [ -e "$cfg" ] || install -Dm644 "$here/config.example.toml" "$cfg"
 plug="$HOME/.config/omarchy/plugins/beyond.keyboard-accent"
-mkdir -p "$plug" && cp -r "$here/plugin/." "$plug/" && chmod +x "$plug/bin/keyboard-accent"
+if [ "$(cd "$plug" 2>/dev/null && pwd -P)" != "$(cd "$here" && pwd -P)" ]; then
+    mkdir -p "$plug/bin"
+    cp "$here/manifest.json" "$here/KeyboardAccent.qml" "$plug/"
+    cp "$here/bin/keyboard-accent" "$plug/bin/"
+fi
+chmod +x "$plug/bin/keyboard-accent"
 
 getent group aula >/dev/null || root groupadd --system aula
 id -nG "$user" | grep -qw aula || root usermod -aG aula "$user"
