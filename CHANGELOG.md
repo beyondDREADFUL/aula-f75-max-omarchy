@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-22 (tests)
+- Added unit tests for colour parsing and the automatic colour choice (`python3 -m unittest discover tests`).
+
 ## 2026-10-22 (latest)
 - The automatic colour choice now reproduces the hand-picked set for 29 of 34 themes: grey/pale accents become a soft white, muted accents get a saturation lift, and green/blue are rebalanced for the underglow. `[color]` gains `saturation_floor`, `saturation_gain`, `underglow_correction` (`min_saturation` removed; `min_lightness` is now 0.46). The example config ships overrides for the bundled Omarchy themes (plus Fireside) so the colours stay fixed; only Kanagawa and Fireside depend on the wallpaper.
 

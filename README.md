@@ -62,6 +62,14 @@ omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the t
 
 The widget: left-click opens the picker, right-click resets to the theme. Switch on "Keep this colour" to pin a colour through theme changes. `omarchy-shell beyond.keyboard-accent toggle` opens it from a keybinding.
 
+## Tests
+
+```sh
+python3 -m unittest discover tests
+```
+
+Covers colour parsing and the automatic colour choice. Hardware behaviour is checked with `apply --verify`.
+
 ## Limits
 
 - The underglow is calibrated by the firmware, so exact colours (white in particular) can't be reproduced there.
