@@ -4,6 +4,8 @@ Makes the **AULA F75 Max** keyboard's lighting follow your [Omarchy](https://oma
 
 ![Bar widget popup](docs/popup.png)
 
+https://github.com/user-attachments/assets/88de778c-60dc-4bb4-acfe-c5b5afe39300
+
 **This only works with the AULA F75 Max.** It talks to the keyboard's own HID protocol (wired `0c45:800a`, dongle `05ac:024f`). Other keyboards use different protocols, so they would need a different controller. The bar widget is a thin front end over the controller's CLI.
 
 ## What's in it
