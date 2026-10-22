@@ -66,7 +66,7 @@ The widget: left-click opens the picker, right-click resets to the theme. Switch
 
 ## Requirements
 
-- An AULA F75 Max (wired USB or the 2.4 GHz dongle) and Omarchy.
+- An AULA F75 Max (wired USB or the 2.4 GHz dongle) and Omarchy. Tested on Omarchy 4.0.6 (Arch, Hyprland); other versions are untested.
 - `python3` (controller), `jq` (widget helper), `sudo` once for `install.sh`.
 - `install.sh` needs root for three things: a udev rule, a systemd one-shot unit, and adding you to a system group `aula` so the keyboard's HID node is writable without root. `./install.sh --dry-run` prints them; `./uninstall.sh` removes them (the group stays).
 - It never overwrites an existing `~/.config/omarchy/keyboard-accent/config.toml`.
