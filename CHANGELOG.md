@@ -1,7 +1,7 @@
 # Changelog
 
 ## 2026-10-22 (plugin layout)
-- The widget now sits at the repository root (`manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent`) so `omarchy plugin add <repo url>` works and the repo can be listed on the Omarchy plugin marketplace. Added `license` to the manifest and a `preview.png`. `plugin/README.md` moved to `docs/WIDGET.md`.
+- The widget now sits at the repository root (`manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent`) so `omarchy plugin add <repo url>` works and the repo can be listed on the Omarchy plugin marketplace. Added `license` to the manifest and a `preview.png`. `plugin/README.md` moved to `docs/WIDGET.md`. The widget now says "Controller missing: run install.sh (see README)" when `omarchy-keyboard-accent` is not installed.
 
 ## 2026-10-22 (tests)
 - Added unit tests for colour parsing and the automatic colour choice (`python3 -m unittest discover tests`).
