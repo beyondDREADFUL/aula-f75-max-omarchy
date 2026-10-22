@@ -1,18 +1,22 @@
 # AULA F75 Max — Omarchy Theme Sync Handbook
 
-Working notes for the keyboard accent controller on this machine.
+How the AULA F75 Max keyboard follows the Omarchy theme accent: architecture,
+protocols, colour pipeline, installation, the bar widget, and troubleshooting.
 
-- Machine: `omarchy` (Arch-based Omarchy, Hyprland)
-- Keyboard: AULA F75 Max, two transports — wired USB and a 2.4 GHz dongle
+- Platform: Arch-based Omarchy, Hyprland
+- Keyboard: AULA F75 Max, two transports: wired USB and a 2.4 GHz dongle
 - Controller: `~/.local/bin/omarchy-keyboard-accent`
+- Bar widget: `~/.config/omarchy/plugins/beyond.keyboard-accent`
+- Source: <https://github.com/beyondDREADFUL/omarchy-aula-f75-max-accent>
 - Last verified: 2026-10-22, wired and wireless, on hardware
-- This file supersedes `AULA-F75-Max-Omarchy-RGB-Documentation.md`, which is
-  left untouched as a historical record. Where the two disagree, this one is
-  current.
+
+Measurements and file listings below come from the reference unit this was
+developed on. Other F75 Max units and firmware revisions may differ in
+calibration (§6.3) and device paths.
 
 ---
 
-## 1. Status at a glance
+## 1. Status at a glance (reference unit)
 
 | Item | Value |
 |---|---|
@@ -52,6 +56,10 @@ login        ──> ~/.config/omarchy/hooks/post-boot.d/keyboard-accent.sh
    per-key frame + static          static effect only
    reads table, infers brightness  stored brightness, no readback
 ```
+
+The bar widget (§18) is a separate front end. It reads the theme and keyboard
+state through a small helper and applies colours by calling the controller's
+CLI; it never talks to the hardware itself.
 
 Hotplug path: udev `add/change` and `remove` events set
 `SYSTEMD_WANTS=aula-keyboard-accent.service`, which runs one `apply` as the
@@ -114,10 +122,10 @@ USB ID plus descriptor, so it is never selected.
 | `~/.local/state/omarchy/keyboard-accent/{lock,worker.lock,request,applied}` | Locking and queue tokens |
 | `/etc/udev/rules.d/65-aula-f75-max.rules` | Access rules and hotplug triggers |
 | `/etc/systemd/system/aula-keyboard-accent.service` | One-shot apply service |
-| `~/Downloads/aula-f75-max-udev-safe.sh` | Installer for the rules and service |
-| `~/Downloads/AULA-F75-Max-Omarchy-RGB-Documentation.md` | Older documentation, deliberately not edited |
+| `~/.config/omarchy/plugins/beyond.keyboard-accent/` | Bar widget: `KeyboardAccent.qml`, `bin/keyboard-accent` helper, `manifest.json` |
 
-No git repository, no daemon, no vendor software running.
+The repository's `install.sh` installs all of the above (§13.3). No daemon, no
+vendor software running.
 
 ---
 
@@ -158,8 +166,8 @@ Used when zone maps are known, the cached frame is valid, and
 8. Optionally verify (`--verify`), which reads all 9 pages and compares.
 
 Why this order is safe: a probe wrote pure green to every direct entry, then
-ran `set_static`; the green survived and only the effect entries changed
-(`/tmp/opencode/wired_order_test.py`). `set_static` owns the effect zone,
+ran `set_static`; the green survived and only the effect entries changed.
+`set_static` owns the effect zone,
 the direct frame owns the key zone, and the two do not overwrite each other.
 
 Why cached effect bytes are harmless: every one of the 144 entries is covered
@@ -204,8 +212,10 @@ failed page-0 read. This is the original conservative order:
 
 ### 6.1 Resolution order
 
-1. `apply --color HEX` — explicit one-off colour; still goes through the
-   transform.
+1. `apply --color HEX` — explicit one-off colour; goes through the transform
+   unless `--exact` is given, which uses the colour as written
+   (`accent_source` becomes `override-exact`). The widget's "Exact colour"
+   switch maps to this.
 2. `[color] mode = "fixed"` — `fixed_color` replaces the theme accent, and is
    then put through the **same transform** as step 1. `min_saturation` and
    `max_lightness` therefore still apply in this mode.
@@ -257,7 +267,9 @@ than expecting an exact match; a 1-LSB difference is invisible.
 Red is attenuated by roughly a third, which means near-neutral or warm colours
 shift toward green/cyan in the underglow, while keys stay exactly as written.
 At normal viewing this is not noticeable (verified with the `white` override:
-keys `#E6E1D8`, underglow `#98DFD6`).
+keys `#E6E1D8`, underglow `#98DFD6`). With `--exact` and pure white the keys
+show `#FFFFFF` and the underglow `#A8FDFD`, a visibly cool tint that cannot be
+corrected from software.
 
 ### 6.4 Per-theme overrides
 
@@ -377,7 +389,7 @@ Page 0 (entries 0–15) contains direct entries 0/14/15 and effect entries
 does not need the full table.
 
 Single-page reads were verified byte-identical to the first page of a full
-read, twice in a row (`/tmp/opencode/wired_page0_test.py`).
+read, twice in a row.
 
 ### 7.5 Verification
 
@@ -495,8 +507,6 @@ Safety checks run before adopting the pacing changes:
   fast again.
 - Theme switch to `kanagawa` and back, confirmed visually on the keyboard.
 
-Pre-trim controller backup: `/tmp/opencode/omarchy-keyboard-accent.pre-trim`.
-`/tmp` is volatile; copy it somewhere durable if you want to keep it.
 
 ---
 
@@ -536,8 +546,11 @@ omarchy-keyboard-accent apply --verify
 # show what would be applied, without touching the keyboard
 omarchy-keyboard-accent apply --dry-run
 
-# one-off colour (still runs the transform)
+# one-off colour (runs the saturation/lightness transform)
 omarchy-keyboard-accent apply --color '#00A0FF' --verify
+
+# one-off colour exactly as written, no transform (white stays white)
+omarchy-keyboard-accent apply --exact --color '#FFFFFF'
 
 # force a brightness level for this apply (persists it)
 omarchy-keyboard-accent apply --brightness 3
@@ -579,7 +592,7 @@ state: brightness=5 transport=wired path=/dev/input/by-id/usb-SONiX_AULA_F75Max-
 
 ### 13.1 Group and nodes
 
-- Dedicated group `aula` (GID 955) contains `beyond`.
+- Dedicated group `aula` contains your user (`install.sh` creates it).
 - Rule sets `GROUP="aula"`, `MODE="0660"`, plus `TAG+="uaccess"`.
 - Wired: matches `0c45:800a` **and** `ID_USB_INTERFACE_NUM == "03"`.
 - Dongle: matches `05ac:024f`; the controller then picks the `0xFF60` node
@@ -600,13 +613,17 @@ ConditionPathExists=~/.local/bin/omarchy-keyboard-accent
 
 [Service]
 Type=oneshot
-User=beyond
-Group=beyond
+User=<you>
+Group=<your group>
 SupplementaryGroups=aula
-Environment=HOME=~
-WorkingDirectory=~
-ExecStart=~/.local/bin/omarchy-keyboard-accent apply
+Environment=HOME=<your home>
+WorkingDirectory=<your home>
+ExecStart=<your home>/.local/bin/omarchy-keyboard-accent apply
 ```
+
+The repository ships this as `system/aula-keyboard-accent.service.in`;
+`install.sh` fills in the user, group and home directory. The unit is not
+portable as written because systemd does not expand `~`.
 
 Started by udev via `SYSTEMD_WANTS`, not enabled at boot. Typical run is
 well under a second; `systemctl status aula-keyboard-accent.service` shows the
@@ -614,10 +631,14 @@ last run.
 
 ### 13.3 Installer
 
-`~/Downloads/aula-f75-max-udev-safe.sh` installs the rules and unit, reloads
-udev, and creates the `aula` group. It never writes
+`install.sh` in the repository root installs the controller and queue script,
+both hooks, the plugin, the udev rule and the systemd unit (user, group and
+home filled in), creates the `aula` group and adds you to it, then reloads
+systemd and udev. Run it as your normal user; it uses `sudo` only for the
+system files. It never overwrites an existing
 `~/.config/omarchy/keyboard-accent/config.toml`, so reinstalling cannot undo
-the colour-order fix or the overrides.
+your overrides or the colour-order fix. Log out and back in once so the group
+applies to the desktop session.
 
 ---
 
@@ -693,9 +714,10 @@ match the theme. If red and blue are swapped, set
 ### Wired write works but `verified=False`
 
 - Restore pacing: raise `FEATURE_SETTLE`, `ACK_POLL`, `PAGE_SETTLE` in the
-  controller, or copy back
-  `/tmp/opencode/omarchy-keyboard-accent.pre-trim` (pre-trim, slower but
+  controller (the current values are 10/20/25 ms; slower values are more
   conservative).
+- A single missed ack is already retried up to 3 times (§5.5); check the log
+  for `apply attempt N failed` lines to see how often it happens.
 - Re-test with `apply --verify` a few times.
 
 ### Brightness resets after a theme change
@@ -711,9 +733,21 @@ match the theme. If red and blue are swapped, set
 - Check the slug with `ls ~/.local/state/omarchy/current/` after switching, or
   `basename` of the theme directory.
 
+### Bar widget missing or stuck
+
+- After installing or editing the plugin, run `omarchy restart shell`.
+  Quickshell's hot reload of plugins is unreliable and can leave a plugin
+  silently absent (no dot, no IPC target, nothing in the logs).
+- `omarchy plugin validate` checks the manifest; `omarchy plugin list` shows
+  whether it is enabled.
+- The widget needs `jq`. Run `~/.config/omarchy/plugins/beyond.keyboard-accent/bin/keyboard-accent status`;
+  it prints one line of JSON, with `"ok":false` and an error if something is
+  wrong.
+- It shows on the laptop bar only (`allowMultiple` is false).
+
 ### Reinstall wiped something?
 
-- The installer never touches `config.toml`. Config backups from earlier edits
+- `install.sh` never touches `config.toml`. Config backups from earlier edits
   are `config.toml.bak.<timestamp>` next to the config.
 
 ---
@@ -730,8 +764,9 @@ match the theme. If red and blue are swapped, set
   conservative pacing and re-test. Protocol commands are unlikely to change,
   but pacing and calibration may.
 - **Reinstall the rules**: run the installer; it is idempotent.
-- **Backups**: the controller's pre-trim copy is in `/tmp` (volatile). Keep a
-  copy under `~/.local/share/` or similar if you want it to survive reboot.
+- **Backups**: keep a copy of the controller before editing it, for example
+  under `~/.local/share/omarchy-keyboard-accent/`.
+- **Plugin edits**: run `omarchy restart shell` afterwards (§15).
 
 ---
 
@@ -758,11 +793,43 @@ match the theme. If red and blue are swapped, set
 - **The fast path assumes the zone partition is complete** (83 + 61 = 144).
   If a future firmware exposes a different split, the controller falls back
   to the read-based order automatically.
+- **Exact colour is opt-in.** The transform keeps accents vivid but tints
+  neutrals (white becomes gold), so `--exact` skips it. Underglow is
+  firmware-calibrated either way and cannot be set exactly.
+- **The widget polls nothing.** It refreshes on load, when the picker opens,
+  after each action, and 2.5 s after the shell's accent changes.
 - **`verified=n/a` on wireless** is expected, not an error.
 
 ---
 
-## 18. Change log
+## 18. Bar widget
+
+Plugin `beyond.keyboard-accent` (`plugin/` in the repository). It adds a dot to
+the bar showing the keyboard's current colour and a popup picker.
+
+- **Dot**: filled when the keyboard matches the theme accent, ringed when a
+  custom colour is set. Left-click opens the popup; right-click resets to the
+  theme colour.
+- **Popup**: keyboard and theme swatches (click THEME to reset), seven presets
+  drawn in the colour the keys will really show, a hex field with live
+  preview, an **Exact colour** switch, and Apply / Reset to theme.
+- **Matching**: keyboard and theme count as matching when their summed
+  per-channel difference is at most 3, because controller rounding can leave a
+  colour a step or two off.
+- **Custom colours** last until the next theme change, when the hook sets the
+  theme colour again.
+- **Helper** `bin/keyboard-accent` wraps the controller and prints one line of
+  JSON per command: `status`, `targets [--exact] #HEX...` (dry run, what the
+  keys would show), `preview`, `apply [--exact] #HEX`, `reset`. Errors are
+  `{"ok":false,"error":...}`.
+- **IPC**: `omarchy-shell beyond.keyboard-accent toggle` (also `open`, `close`,
+  `refresh`, `reset`).
+- **Enable**: `omarchy plugin enable beyond.keyboard-accent`, then
+  `omarchy restart shell`.
+
+---
+
+## 19. Change log
 
 ### 2026-10-21
 - Wired controller, hooks, queue, locking, brightness preservation,
@@ -774,9 +841,12 @@ match the theme. If red and blue are swapped, set
   `wireless_color_order` from `bgr` to `rgb` (verified on hardware).
 
 ### 2026-10-22
+- Added `apply --exact` (colour as written, no transform) after white showed as
+  light gold through the saturation floor.
+- Bar widget added (§18) and the project published as a repository with an
+  installer.
 - Protocol errors retried (3 attempts, 0.5 s apart). Added after a theme
-  change was dropped on a missed ack (`no ack for 4/24`, 11:26). Backup of the
-  previous controller: `~/.local/share/omarchy-keyboard-accent/omarchy-keyboard-accent.pre-retry`.
+  change was dropped on a missed ack (`no ack for 4/24`, 11:26)..
 - Wired `apply` optimised from 3.56 s to 0.68 s:
   - verify made opt-in (`--verify`);
   - direct frame written before `set_static`, using a cached full frame;
