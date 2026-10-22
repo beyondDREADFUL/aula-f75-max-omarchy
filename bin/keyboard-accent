@@ -57,6 +57,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+if [ ! -x "$CONTROLLER" ]; then
+    fail "Controller missing: run install.sh (see README)"
+fi
+
 case "$command" in
 status)
     theme=$("$CONTROLLER" status 2>/dev/null | awk '/^target:/ {print $2}')
