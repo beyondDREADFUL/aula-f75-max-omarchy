@@ -40,6 +40,10 @@ omarchy-keyboard-accent apply
 omarchy plugin enable beyond.keyboard-accent && omarchy restart shell
 ```
 
+## Upgrading from v1
+
+Run `./install.sh` again: v2 installs its libraries to `~/.local/share/omarchy-keyboard-accent`. Your `config.toml` keeps working; `underglow_correction`, `match_direct_zone` and `wireless_color_order` are ignored now (see `config.example.toml` for the new `[lighting]` and `[lcd]` keys). Theme colours from `[theme_overrides]` are unchanged; accents without an override can look slightly different, because v1 lowered green and blue to correct an underglow that doesn't exist ([docs/HANDBOOK.md](docs/HANDBOOK.md) §14).
+
 ## Uninstall
 
 ```bash
