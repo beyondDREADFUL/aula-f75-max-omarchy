@@ -8,6 +8,8 @@
   panel's edge cut off. Music is disabled with a note when only the dongle is connected.
 - The bar shows a fixed white keyboard icon instead of a coloured dot; the tooltip carries
   the state.
+- Switching between animated effects no longer lowers the brightness: it is read back from
+  the keys only when they showed a static colour (a breathing key read as a dimmer level).
 - New keybinding targets: `brighter`, `dimmer`, `brightness N`.
 - New controller commands: `palette`, `set-effect NAME --speed N`; `status` reports the
   speed and the connected transports.

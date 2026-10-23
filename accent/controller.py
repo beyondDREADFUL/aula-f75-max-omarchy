@@ -139,7 +139,9 @@ def cmd_apply(args) -> int:
         with kb:
             if args.brightness is not None:
                 brightness = min(max(args.brightness, 1), 5)
-            elif kb.transport == "wired":
+            elif kb.transport == "wired" and state.get("effect", "static") == "static":
+                # only a static colour can be read back: an animated effect shows the keys
+                # dimmed part of the time, which would read as a lower level
                 brightness = live_brightness(kb, last, stored)
             else:
                 brightness = stored

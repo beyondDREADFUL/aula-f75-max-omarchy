@@ -218,7 +218,8 @@ neutral (**seen**). **The red gain is a correct white balance**, so:
 Over the cable the apply reads page 0 of the table, takes the colour most key slots show
 (at least 80 % must agree), and finds the level at which the last applied colour is stored
 as that value (within 12). This keeps a level set with the keyboard's own keys
-(**read**: set 3, next apply kept 3). If the keys are not uniform (an animated effect),
+(**read**: set 3, next apply kept 3). It only reads back after a static colour: an animated
+effect dims the keys part of the time, which read as level 1 (**read**). If the keys are not uniform,
 or nothing fits, the stored level is used. The dongle has no read-back; it reuses the
 stored level.
 
