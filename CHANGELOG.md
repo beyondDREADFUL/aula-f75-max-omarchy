@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-23 (v2, widget)
+- The widget can switch the effect the accent is shown as, and start and stop the music
+  visualiser (dark or ambilight background). New `omarchy-keyboard-accent set-effect`.
+- Stopping music no longer leaves the keyboard rejecting the theme apply: Ctrl+C and
+  SIGTERM now stop between frames.
+- `f75ctl music` over the dongle fails at once with "music needs the USB cable".
+
 ## 2026-10-23 (v2)
 - Rebuilt on `aula_f75`, a protocol library with every command checked on the keyboard
   (cable and dongle). The controller, `f75ctl` and the music visualiser share it and one

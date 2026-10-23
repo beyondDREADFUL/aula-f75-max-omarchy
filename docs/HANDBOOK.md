@@ -295,6 +295,9 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
   25 % per frame.
 - Holds the keyboard lock while running; a theme change meanwhile waits up to 15 s, then is
   deferred, and `music` applies the theme accent when it stops (`--after theme`, default).
+- Ctrl+C and SIGTERM only set a flag that the loop checks between frames. Stopping inside a
+  frame left the keyboard waiting for the rest of it, and it then rejected the theme apply
+  (`04 18` answered `00 ff`) until it timed out by itself (**read**, **seen**).
 
 ---
 
@@ -327,6 +330,8 @@ soft white that keeps their hue (warm if none); lightness is held in
 | `~/.config/omarchy/keyboard-accent/config.toml` | config (`config.example.toml` documents every key); never overwritten by install |
 | `~/.local/state/omarchy/keyboard-accent/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
 | `.../pin.json` | pinned colour, if any |
+| `.../effect.json` | effect chosen in the widget (overrides `[lighting] effect`) |
+| `.../music.pid`, `music.log` | the visualiser started from the widget |
 | `.../keyboard-accent.log` | one line per apply |
 | `$XDG_RUNTIME_DIR/aula-f75.lock` | the keyboard lock |
 
@@ -337,6 +342,7 @@ soft white that keeps their hue (warm if none); lightness is held in
 ```bash
 omarchy-keyboard-accent apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
 omarchy-keyboard-accent unpin | status [--read-table] | read | set-brightness N
+omarchy-keyboard-accent set-effect NAME|default   effect chosen in the widget, over the config's
 
 f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]

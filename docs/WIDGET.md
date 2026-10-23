@@ -27,6 +27,17 @@ instead: it then survives theme changes, login and reconnects until you press
 Reset to theme (or right-click the dot). Open the picker from a keybinding with
 `omarchy-shell beyond.keyboard-accent toggle`.
 
+## Effect and music
+
+**EFFECT** shows the accent as any of the keyboard's 19 effects. A click applies it at
+once (`omarchy-keyboard-accent set-effect NAME`) and is remembered over the config's
+`[lighting] effect`.
+
+**Music visualiser** starts `f75ctl music` in the background with a dark or ambilight
+background (ambilight needs grim and pillow); switching it off returns the keyboard to the
+theme colour. It needs the USB cable. A theme change while it runs is applied when it
+stops. `omarchy-shell beyond.keyboard-accent music` toggles it from a keybinding.
+
 ## How it stays current
 
 No polling. The widget refreshes when it loads, when the picker opens, after
@@ -37,5 +48,6 @@ for the keyboard hook to finish).
 
 - `KeyboardAccent.qml` — the bar widget and picker.
 - `bin/keyboard-accent` — helper that wraps the controller. Every command
-  prints one line of JSON: `status`, `targets`, `preview`, `apply`, `reset`.
+  prints one line of JSON: `status`, `targets`, `preview`, `apply`, `reset`, `effect`,
+  `music start|stop`.
 - `manifest.json` — plugin manifest.

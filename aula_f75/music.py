@@ -13,6 +13,7 @@ import math
 import os
 import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -252,15 +253,20 @@ def run(kb, opts: Options, on_start=print) -> float:
                 raise MusicError("cava is not installed or did not start")
             source = builtin_levels(opts)
         name, levels, close = source
+    # Ctrl+C and SIGTERM only set a flag: stopping inside a frame leaves the keyboard
+    # waiting for the rest of it, and it then rejects the next command
+    stop = []
+    previous = {sig: signal.signal(sig, lambda *_: stop.append(1))
+                for sig in (signal.SIGINT, signal.SIGTERM)}
     on_start(f"{name}; Ctrl+C to stop")
     try:
-        while opts.seconds is None or time.time() - t_start < opts.seconds:
+        while not stop and (opts.seconds is None or time.time() - t_start < opts.seconds):
             loop_start = time.time()
             draw(next(levels))
             # sources can return early with buffered audio; don't exceed fps
             time.sleep(max(0, interval - (time.time() - loop_start)))
-    except KeyboardInterrupt:
-        pass
     finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
         close()
     return frames / max(1e-6, time.time() - t_start)

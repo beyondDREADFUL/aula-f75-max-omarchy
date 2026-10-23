@@ -17,6 +17,7 @@ CONFIG_FILE = HOME / ".config/omarchy/keyboard-accent/config.toml"
 STATE_DIR = HOME / ".local/state/omarchy/keyboard-accent"
 STATE_FILE = STATE_DIR / "state.json"
 PIN_FILE = STATE_DIR / "pin.json"
+EFFECT_FILE = STATE_DIR / "effect.json"
 LOG_FILE = STATE_DIR / "keyboard-accent.log"
 
 DEFAULTS = {
@@ -134,6 +135,21 @@ def save_pin(color: str, exact: bool) -> None:
 
 def clear_pin() -> None:
     PIN_FILE.unlink(missing_ok=True)
+
+
+def effect_override() -> str | None:
+    """The effect chosen in the widget, which takes precedence over [lighting] effect."""
+    data = _read_json(EFFECT_FILE)
+    name = data.get("effect") if isinstance(data, dict) else None
+    return name if name in MODES and name not in NO_COLOR_EFFECTS else None
+
+
+def save_effect(name: str | None) -> None:
+    """Store the widget's effect, or None to go back to the config."""
+    if name is None:
+        EFFECT_FILE.unlink(missing_ok=True)
+    else:
+        _write_json(EFFECT_FILE, {"effect": name})
 
 
 def theme_slug() -> str | None:

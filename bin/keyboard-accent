@@ -7,6 +7,9 @@
 #   preview [--exact] #HEX              same for a single colour
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
+#   effect  NAME|default                show the accent as this effect (default: config's)
+#   music   start [off|ambilight]       start the music visualiser (USB cable only)
+#   music   stop                        stop it; the keyboard returns to the theme colour
 #
 # --exact uses the colour as written. Without it the controller applies the
 # theme's saturation and lightness limits, which tint neutrals such as white.
@@ -16,9 +19,20 @@
 set -u
 
 CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
+F75CTL="$HOME/.local/bin/f75ctl"
 STATE_DIR="$HOME/.local/state/omarchy/keyboard-accent"
 STATE="$STATE_DIR/state.json"
 PIN="$STATE_DIR/pin.json"
+MUSIC_PID="$STATE_DIR/music.pid"
+MUSIC_LOG="$STATE_DIR/music.log"
+
+# The pid of the running visualiser, if any.
+music_pid() {
+    local pid
+    pid=$(cat "$MUSIC_PID" 2>/dev/null) || return 1
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && grep -q f75ctl "/proc/$pid/cmdline" 2>/dev/null \
+        && echo "$pid"
+}
 
 fail() {
     jq -nc --arg error "$1" '{ok: false, error: $error}'
@@ -63,7 +77,11 @@ fi
 
 case "$command" in
 status)
-    theme=$("$CONTROLLER" status 2>/dev/null | awk '/^target:/ {print $2}')
+    status=$("$CONTROLLER" status 2>/dev/null)
+    theme=$(awk '/^target:/ {print $2}' <<<"$status")
+    effect=$(awk '/^effect:/ {print $2}' <<<"$status")
+    music=false
+    music_pid >/dev/null && music=true
     [ -n "$theme" ] || fail "could not read the theme colour"
     keyboard="" source="" brightness=0 transport=""
     IFS=$'\t' read -r keyboard source brightness transport < <(
@@ -77,7 +95,8 @@ status)
     fi
     pinned=$(jq -r '.color // empty' "$PIN" 2>/dev/null)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
-        --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" '{
+        --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
+        --arg effect "${effect:-static}" --argjson music "$music" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -86,7 +105,9 @@ status)
         pinned: ($pinned != ""),
         pin: $pinned,
         brightness: $brightness,
-        transport: $transport
+        transport: $transport,
+        effect: $effect,
+        music: $music
     }'
     ;;
 
@@ -119,8 +140,44 @@ reset)
     jq -nc '{ok: true}'
     ;;
 
+effect)
+    [ -n "${1:-}" ] || fail "no effect given"
+    "$CONTROLLER" set-effect "$1" >/dev/null 2>&1 || fail "could not set effect $1"
+    jq -nc '{ok: true}'
+    ;;
+
+music)
+    case "${1:-}" in
+    start)
+        background=${2:-off}
+        [[ $background =~ ^(off|ambilight)$ ]] || fail "unknown background $background"
+        if ! music_pid >/dev/null; then
+            mkdir -p "$STATE_DIR"
+            # setsid detaches it from the widget; it runs until `music stop`
+            nohup setsid "$F75CTL" music --background "$background" >"$MUSIC_LOG" 2>&1 </dev/null &
+            echo $! >"$MUSIC_PID"
+            sleep 1.5
+            if ! music_pid >/dev/null; then
+                error=$(grep -m1 -i 'f75ctl:\|error' "$MUSIC_LOG" | sed 's/^f75ctl: //')
+                fail "${error:-music did not start}"
+            fi
+        fi
+        jq -nc '{ok: true, music: true}'
+        ;;
+    stop)
+        if pid=$(music_pid); then
+            kill -TERM "$pid"          # f75ctl then hands the keyboard back to the theme
+            for _ in $(seq 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        fi
+        rm -f "$MUSIC_PID"
+        jq -nc '{ok: true, music: false}'
+        ;;
+    *) fail "usage: music start [off|ambilight] | music stop" ;;
+    esac
+    ;;
+
 *)
-    echo "usage: keyboard-accent status|targets|preview|apply|reset" >&2
+    echo "usage: keyboard-accent status|targets|preview|apply|reset|effect|music" >&2
     exit 2
     ;;
 esac

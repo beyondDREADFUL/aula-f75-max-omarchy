@@ -23,6 +23,9 @@ Panel {
   property string keyboardHex: ""
   property bool matches: false
   property bool pinned: false        // a pinned colour overrides the theme
+  property string effect: "static"   // lighting effect the accent is shown as
+  property bool musicOn: false       // f75ctl music is running
+  property string transport: ""      // "wired" or "wireless", from the last apply
 
   // Picker state.
   property bool keep: false           // pin the colour across theme changes
@@ -31,9 +34,13 @@ Panel {
   property string previewHex: ""      // same, for the hex field
   property string message: ""
   property bool failed: false
+  property string musicBackground: "off"   // "off" or "ambilight"
 
   readonly property string helperPath: String(Qt.resolvedUrl("bin/keyboard-accent")).replace(/^file:\/\//, "")
   readonly property var presets: ["#FF0000", "#FF8000", "#FFD000", "#00C853", "#00A0FF", "#8839EF", "#FF2D95"]
+  readonly property var effects: ["static", "breath", "pulsating", "glittering", "falling",
+    "single-on", "single-off", "ripples", "outward", "explode", "launch", "scrolling", "rolling",
+    "rotating", "flowing", "tilt", "shuttle", "colourful", "spectrum"]
   readonly property color fg: bar ? bar.foreground : "#cacccc"
   readonly property color bg: bar ? bar.background : "#101315"
   readonly property color dim: Qt.darker(fg, 1.4)
@@ -143,6 +150,9 @@ Panel {
       root.matches = result.matches === true
       root.pinned = result.pinned === true
       root.keep = root.pinned
+      root.effect = String(result.effect || "static")
+      root.musicOn = result.music === true
+      root.transport = String(result.transport || "")
     })
   }
 
@@ -184,6 +194,26 @@ Panel {
     root.enqueue(["reset"], "", function(result) {
       root.report(result, "Back on the theme colour")
       root.previewHex = ""
+      Qt.callLater(root.refresh)
+    })
+  }
+
+  // Effects apply at once; the colour choice above still waits for Apply.
+  function setEffect(name) {
+    root.message = "Switching to " + name + "…"
+    root.failed = false
+    root.enqueue(["effect", name], "", function(result) {
+      root.report(result, "Effect: " + name)
+      Qt.callLater(root.refresh)
+    })
+  }
+
+  function setMusic(on) {
+    root.message = on ? "Starting the music visualiser…" : "Stopping the music visualiser…"
+    root.failed = false
+    var args = on ? ["music", "start", root.musicBackground] : ["music", "stop"]
+    root.enqueue(args, "", function(result) {
+      root.report(result, on ? "Music on: bars follow the sound" : "Music off, back on the theme colour")
       Qt.callLater(root.refresh)
     })
   }
@@ -238,6 +268,7 @@ Panel {
     function toggle(): void { root.toggle() }
     function refresh(): void { root.refresh() }
     function reset(): void { root.resetToTheme() }
+    function music(): void { root.setMusic(!root.musicOn) }
   }
 
   // ---- bar swatch ---------------------------------------------------------
@@ -275,7 +306,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(320))
-    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(640))
+    contentHeight: panel.fittedContentHeight(panelColumn.implicitHeight, Style.space(900))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -580,6 +611,149 @@ Panel {
             MouseArea {
               anchors.fill: parent
               onClicked: root.resetToTheme()
+            }
+          }
+        }
+
+        PanelSeparator {
+          foreground: root.fg
+        }
+
+        // The effect the accent is shown as; applies at once.
+        PanelSectionHeader {
+          text: "EFFECT"
+          foreground: root.fg
+          fontFamily: root.family
+        }
+
+        Flow {
+          width: parent.width
+          spacing: Style.space(6)
+
+          Repeater {
+            model: root.effects
+
+            Rectangle {
+              required property string modelData
+              readonly property bool picked: root.effect === modelData
+              width: chipText1.implicitWidth + Style.space(16)
+              height: Style.space(24)
+              radius: height / 2
+              color: picked ? root.fg : "transparent"
+              border.width: Math.max(1, Style.space(1))
+              border.color: picked ? root.fg : Qt.darker(root.fg, 1.8)
+
+              Text {
+                id: chipText1
+                anchors.centerIn: parent
+                text: modelData
+                color: parent.picked ? root.bg : root.fg
+                font.family: root.family
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: if (modelData !== root.effect) root.setEffect(modelData)
+              }
+            }
+          }
+        }
+
+        // Spectrum bars from the system sound, streamed over the USB cable.
+        Item {
+          width: parent.width
+          implicitHeight: Math.max(musicLabels.implicitHeight, musicSwitch.height)
+
+          Column {
+            id: musicLabels
+            anchors.left: parent.left
+            anchors.right: musicSwitch.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              text: "Music visualiser"
+              color: root.fg
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              font.bold: true
+            }
+
+            Text {
+              width: parent.width
+              text: root.transport === "wireless" && !root.musicOn
+                ? "Needs the USB cable"
+                : "Bars follow the sound; off returns to the theme colour"
+              wrapMode: Text.WordWrap
+              color: root.dim
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+
+          Rectangle {
+            id: musicSwitch
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(36)
+            height: Style.space(20)
+            radius: height / 2
+            color: root.musicOn ? root.fg : "transparent"
+            border.width: Math.max(1, Style.space(1))
+            border.color: root.fg
+
+            Rectangle {
+              width: parent.height - Style.space(6)
+              height: width
+              radius: width / 2
+              anchors.verticalCenter: parent.verticalCenter
+              x: root.musicOn ? parent.width - width - Style.space(3) : Style.space(3)
+              color: root.musicOn ? root.bg : root.fg
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              onClicked: root.setMusic(!root.musicOn)
+            }
+          }
+        }
+
+        Flow {
+          width: parent.width
+          spacing: Style.space(6)
+
+          Repeater {
+            model: ["off", "ambilight"]
+
+            Rectangle {
+              required property string modelData
+              readonly property bool picked: root.musicBackground === modelData
+              width: chipText2.implicitWidth + Style.space(16)
+              height: Style.space(24)
+              radius: height / 2
+              color: picked ? root.fg : "transparent"
+              border.width: Math.max(1, Style.space(1))
+              border.color: picked ? root.fg : Qt.darker(root.fg, 1.8)
+
+              Text {
+                id: chipText2
+                anchors.centerIn: parent
+                text: modelData === "off" ? "Dark" : "Ambilight"
+                color: parent.picked ? root.bg : root.fg
+                font.family: root.family
+                font.pixelSize: Style.font.caption
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                  root.musicBackground = modelData
+                  if (root.musicOn) root.setMusic(true)
+                }
+              }
             }
           }
         }

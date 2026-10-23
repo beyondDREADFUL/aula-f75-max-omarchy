@@ -70,8 +70,17 @@ def verify(kb, target, brightness) -> bool:
     return stored is not None and sum(abs(a - b) for a, b in zip(stored, expected)) <= VERIFY_TOLERANCE
 
 
-def cmd_apply(args) -> int:
+def load_config() -> dict:
+    """The config with the widget's effect choice applied."""
     config = cfg.load_config()
+    config["effect_source"] = "config"
+    if effect := cfg.effect_override():
+        config["effect"], config["effect_source"] = effect, "widget"
+    return config
+
+
+def cmd_apply(args) -> int:
+    config = load_config()
     state = cfg.load_state()
     theme = cfg.theme_slug() or args.theme or state.get("theme") or "unknown"
     color, exact = args.color, args.exact
@@ -133,6 +142,19 @@ def cmd_apply(args) -> int:
     return 0 if verified != "False" else 1
 
 
+def cmd_set_effect(args) -> int:
+    if args.effect == "default":
+        cfg.save_effect(None)
+    elif args.effect in lighting.MODES and args.effect not in cfg.NO_COLOR_EFFECTS:
+        cfg.save_effect(args.effect)
+    else:
+        print(f"unknown effect {args.effect!r}", file=sys.stderr)
+        return 2
+    args.color, args.exact, args.pin, args.dry_run, args.verify, args.theme, args.brightness = (
+        None, False, False, False, False, None, None)
+    return cmd_apply(args)
+
+
 def cmd_unpin(args) -> int:
     cfg.clear_pin()
     return 0
@@ -158,7 +180,7 @@ def cmd_read(args) -> int:
 
 
 def cmd_status(args) -> int:
-    config, state = cfg.load_config(), cfg.load_state()
+    config, state = load_config(), cfg.load_state()
     try:
         target, accent, source = resolve_target(config)
     except Exception as exc:  # noqa: BLE001
@@ -170,7 +192,8 @@ def cmd_status(args) -> int:
         print(f"pin: {pin['color']}{' exact' if pin['exact'] else ''} (overrides the theme)")
     print(f"accent: {hexstr(accent)} ({source})")
     print(f"target: {hexstr(target)} {describe(target)}")
-    print(f"config: effect={config['effect']} speed={config['speed']} "
+    print(f"effect: {config['effect']} ({config['effect_source']})")
+    print(f"config: speed={config['speed']} "
           f"direction={config['direction']} prefer={config['device_prefer']} "
           f"lcd_clock={config['lcd_clock']} theme_overrides={len(config['theme_overrides'])}")
     print(f"state: brightness={state.get('brightness', '?')} transport={state.get('transport', '?')} "
@@ -196,6 +219,11 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--brightness", type=int, help="force a brightness level 1-5")
     a.add_argument("--verify", action="store_true", help="read the keys back afterwards (wired)")
     a.set_defaults(func=cmd_apply)
+    e = sub.add_parser("set-effect", help="show the accent as this effect and apply "
+                       "(\"default\" returns to the config's effect)")
+    e.add_argument("effect", choices=["default", *[m for m in lighting.MODES
+                                                   if m not in cfg.NO_COLOR_EFFECTS]])
+    e.set_defaults(func=cmd_set_effect)
     sub.add_parser("unpin", help="clear the pinned colour (does not apply)").set_defaults(
         func=cmd_unpin)
     sub.add_parser("read", help="dump the live LED table (wired)").set_defaults(func=cmd_read)

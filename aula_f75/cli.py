@@ -67,6 +67,8 @@ def _write_layer(kb, a, all_macros):
 
 
 def cmd_music(kb, a):
+    if kb.transport != "wired":
+        raise Unsupported("music needs the USB cable (live frames don't go over 2.4G)")
     opts = music.Options(a.fps, a.color, a.background, a.background_brightness, a.amplitude,
                          a.source, a.seconds, a.test)
     fps = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"))
