@@ -31,6 +31,7 @@ BAR_COLORS = ["green-yellow-red", "rainbow", "reverse-rainbow", "gradient", "spe
               *SOLID, "off"]
 BACKGROUNDS = ["off", "spectrum-cycle", "ambilight", *SOLID]
 SOURCES = ["auto", "cava", "builtin"]
+AMBILIGHT_AREAS = ["window", "monitor", "all"]   # what ambilight follows
 
 
 class MusicError(RuntimeError):
@@ -47,6 +48,7 @@ class Options:
     source: str = "auto"               # one of SOURCES
     seconds: float | None = None       # None = until interrupted
     test: bool = False                 # moving test pattern, no audio
+    ambilight_area: str = "window"     # one of AMBILIGHT_AREAS
 
 
 def _hsv(h):
@@ -87,12 +89,39 @@ def bars_frame(levels, opts: Options, t=0.0, ambient=(0, 0, 0)):
     return colors
 
 
-def screen_color():
-    """The screen's dominant colour at full brightness, or black when the screen is mostly
-    neutral. Each pixel counts by its chroma, so grey, white and black areas don't count:
-    a plain desktop averages out to near grey, which shows as white on the keys."""
-    shot = subprocess.run(["grim", "-t", "ppm", "-s", "0.05", "-"], capture_output=True,
-                          check=True).stdout
+def _hyprctl(what: str):
+    import json
+    try:
+        out = subprocess.run(["hyprctl", "-j", what], capture_output=True, text=True,
+                             timeout=2).stdout
+        return json.loads(out)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def capture_area(area: str) -> list[str]:
+    """grim arguments for the area ambilight follows: the focused window (or its monitor
+    when nothing has focus), the focused monitor, or every monitor. Outside Hyprland it is
+    always every monitor."""
+    if area == "window":
+        win = _hyprctl("activewindow")
+        if isinstance(win, dict) and win.get("size"):
+            (x, y), (w, h) = win["at"], win["size"]
+            return ["-g", f"{x},{y} {w}x{h}"]
+        area = "monitor"
+    if area == "monitor":
+        for mon in _hyprctl("monitors") or []:
+            if mon.get("focused"):
+                return ["-o", mon["name"]]
+    return []
+
+
+def screen_color(area: str = "window"):
+    """The dominant colour of the area (see capture_area) at full brightness, or black when
+    it is mostly neutral. Each pixel counts by its chroma, so grey, white and black areas
+    don't count: a plain desktop averages out to near grey, which shows as white on the keys."""
+    shot = subprocess.run(["grim", *capture_area(area), "-t", "ppm", "-s", "0.05", "-"],
+                          capture_output=True, check=True).stdout
     # binary PPM: "P6", width, height, maxval as ASCII separated by whitespace, then RGB
     fields, pos = [], 0
     while len(fields) < 4:
@@ -122,17 +151,18 @@ class Ambilight:
     """Samples the screen in a thread (a capture takes 0.1-0.3 s) and eases the shown colour
     25 % toward it per frame."""
 
-    def __init__(self):
+    def __init__(self, area: str = "window"):
         if not shutil.which("grim"):
             raise MusicError("the ambilight background needs grim (Wayland screenshots)")
-        self.target = self.shown = screen_color()
+        self.area = area
+        self.target = self.shown = screen_color(area)
         self.error = None
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self):
         while True:
             try:
-                self.target = screen_color()
+                self.target = screen_color(self.area)
             except Exception as exc:      # noqa: BLE001 - reported from the drawing side
                 self.error = exc
                 return
@@ -240,7 +270,7 @@ def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
     """Stream bars to kb until opts.seconds pass or SIGINT, SIGTERM or SIGUSR1 arrives.
     Returns (frames per second, the signal that stopped it or None)."""
     interval = 1 / opts.fps
-    amb = Ambilight() if opts.background == "ambilight" else None
+    amb = Ambilight(opts.ambilight_area) if opts.background == "ambilight" else None
     t_start, frames = time.time(), 0
 
     def draw(levels):

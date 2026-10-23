@@ -6,7 +6,9 @@
   set-effect`.
 - `f75ctl music --background` also takes a hex colour. The ambilight background no longer
   needs pillow and ignores grey and white areas, so a neutral screen gives a dark background
-  instead of white.
+  instead of white. It follows the focused window by default (`--ambilight-area window`,
+  or `monitor` / `all`); before, it averaged both monitors, so it was unclear what it
+  followed.
 - Stopping music no longer leaves the keyboard rejecting the theme apply: Ctrl+C and
   SIGTERM now stop between frames.
 - Changing the music background in the widget while music runs restarts it with the new

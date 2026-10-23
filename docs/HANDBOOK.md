@@ -291,8 +291,10 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
   reads exactly the audio produced since its last read (reading a fixed amount fell ~20 s
   behind over 30 s).
 - Backgrounds: a named or hex colour at a chosen brightness (the widget uses the theme
-  colour at 30 %), a hue cycle, or `ambilight`: the screen's dominant colour from a 5 %
-  `grim` screenshot in a background thread. Pixels count by their chroma, so grey, white
+  colour at 30 %), a hue cycle, or `ambilight`: the dominant colour of the focused window
+  (`--ambilight-area window`, default; asked from `hyprctl` at every sample), the focused
+  monitor (`monitor`) or all monitors (`all`), from a 5 % `grim` screenshot in a background
+  thread (**seen**: the keys follow the focused window). Pixels count by their chroma, so grey, white
   and black areas don't count, and a mostly neutral screen gives no background (an
   ordinary desktop averaged to near grey, which showed as white, **seen**). The colour
   eases 25 % per frame.
