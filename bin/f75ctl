@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Control the AULA F75 Max: effects, per-key colours, remaps, macros, LCD, music. See
+aula_f75/cli.py."""
+import sys
+from pathlib import Path
+
+# the packages sit next to bin/ in the repository, or where install.sh puts them
+for lib in (Path(__file__).resolve().parent.parent,
+            Path.home() / ".local/share/omarchy-keyboard-accent"):
+    if (lib / "aula_f75").is_dir():
+        sys.path.insert(0, str(lib))
+        break
+
+from aula_f75.cli import main  # noqa: E402
+
+sys.exit(main())
