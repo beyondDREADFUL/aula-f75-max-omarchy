@@ -9,6 +9,8 @@
   instead of white.
 - Stopping music no longer leaves the keyboard rejecting the theme apply: Ctrl+C and
   SIGTERM now stop between frames.
+- Changing the music background in the widget while music runs restarts it with the new
+  background (SIGUSR1 stops `f75ctl music` without handing back to the theme).
 - `f75ctl music` over the dongle fails at once with "music needs the USB cable".
 
 ## 2026-10-23 (v2)

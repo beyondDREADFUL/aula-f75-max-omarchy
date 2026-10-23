@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 import time
 
@@ -81,9 +82,11 @@ def cmd_music(kb, a):
         raise Unsupported("music needs the USB cable (live frames don't go over 2.4G)")
     opts = music.Options(a.fps, a.color, a.background, a.background_brightness, a.amplitude,
                          a.source, a.seconds, a.test)
-    fps = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"))
-    print(f"{fps:.1f} fps")
+    fps, stopped_by = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"))
+    print(f"{fps:.1f} fps", flush=True)
     kb.close()
+    if stopped_by == signal.SIGUSR1:
+        return          # stopped to restart with other settings: leave the keyboard as is
     if a.after == "theme":
         # hand the keyboard back to the theme accent (also applies a theme change that was
         # deferred while music held the keyboard)

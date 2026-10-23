@@ -236,8 +236,9 @@ def builtin_levels(opts: Options):
     return spk.name, levels(), lambda: rec.__exit__(None, None, None)
 
 
-def run(kb, opts: Options, on_start=print) -> float:
-    """Stream bars to kb until opts.seconds pass or KeyboardInterrupt. Returns frames/s."""
+def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
+    """Stream bars to kb until opts.seconds pass or SIGINT, SIGTERM or SIGUSR1 arrives.
+    Returns (frames per second, the signal that stopped it or None)."""
     interval = 1 / opts.fps
     amb = Ambilight() if opts.background == "ambilight" else None
     t_start, frames = time.time(), 0
@@ -267,8 +268,8 @@ def run(kb, opts: Options, on_start=print) -> float:
     # Ctrl+C and SIGTERM only set a flag: stopping inside a frame leaves the keyboard
     # waiting for the rest of it, and it then rejects the next command
     stop = []
-    previous = {sig: signal.signal(sig, lambda *_: stop.append(1))
-                for sig in (signal.SIGINT, signal.SIGTERM)}
+    previous = {sig: signal.signal(sig, lambda signum, _: stop.append(signum))
+                for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGUSR1)}
     on_start(f"{name}; Ctrl+C to stop")
     try:
         while not stop and (opts.seconds is None or time.time() - t_start < opts.seconds):
@@ -280,4 +281,4 @@ def run(kb, opts: Options, on_start=print) -> float:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
         close()
-    return frames / max(1e-6, time.time() - t_start)
+    return frames / max(1e-6, time.time() - t_start), (stop[0] if stop else None)

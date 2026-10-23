@@ -26,6 +26,7 @@ STATE="$STATE_DIR/state.json"
 PIN="$STATE_DIR/pin.json"
 MUSIC_PID="$STATE_DIR/music.pid"
 MUSIC_LOG="$STATE_DIR/music.log"
+MUSIC_BG="$STATE_DIR/music.background"
 
 # The pid of the running visualiser, if any.
 music_pid() {
@@ -159,8 +160,14 @@ music)
             ;;
         *) fail "unknown background ${2}" ;;
         esac
+        if pid=$(music_pid) && [ "$(cat "$MUSIC_BG" 2>/dev/null)" != "${2:-off}" ]; then
+            # other background: stop without handing back to the theme, then start again
+            kill -USR1 "$pid"
+            for _ in $(seq 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        fi
         if ! music_pid >/dev/null; then
             mkdir -p "$STATE_DIR"
+            printf '%s\n' "${2:-off}" >"$MUSIC_BG"
             # setsid detaches it from the widget; it runs until `music stop`
             nohup setsid "$F75CTL" music "${background[@]}" >"$MUSIC_LOG" 2>&1 </dev/null &
             echo $! >"$MUSIC_PID"
