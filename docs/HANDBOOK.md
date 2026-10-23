@@ -291,13 +291,11 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
   reads exactly the audio produced since its last read (reading a fixed amount fell ~20 s
   behind over 30 s).
 - Backgrounds: a named or hex colour at a chosen brightness (the widget uses the theme
-  colour at 30 %), a hue cycle, or `ambilight`: the dominant colour of the focused window
-  (`--ambilight-area window`, default; asked from `hyprctl` at every sample), the focused
-  monitor (`monitor`) or all monitors (`all`), from a 5 % `grim` screenshot in a background
-  thread (**seen**: the keys follow the focused window). Pixels count by their chroma, so grey, white
-  and black areas don't count, and a mostly neutral screen gives no background (an
-  ordinary desktop averaged to near grey, which showed as white, **seen**). The colour
-  eases 25 % per frame.
+  colour at 30 %), or a hue cycle.
+- Cost (**read**, 15 s each, one core = 100 %): cava with any background about 4 %, 32 MiB;
+  the built-in FFT about 8 %, 41 MiB; the test pattern 3 %. An "ambilight" background
+  (screen colour via `grim`) was tried and removed: 44-74 %, and an ordinary desktop
+  averaged to near grey, which showed as white.
 - Holds the keyboard lock while running; a theme change meanwhile waits up to 15 s, then is
   deferred, and `music` applies the theme accent when it stops (`--after theme`, default).
 - Ctrl+C and SIGTERM only set a flag that the loop checks between frames. Stopping inside a
@@ -353,12 +351,12 @@ f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
 f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c [--fn-layer] | macro ... | reset-keymap [--fn-layer]
 f75ctl clock | gif FILE | battery | keys
-f75ctl music [--source auto|cava|builtin] [--color ...] [--background ...|ambilight] [--test]
+f75ctl music [--source auto|cava|builtin] [--color ...] [--background NAME|RRGGBB] [--test]
 f75ctl --dry-run ...       print cable packets, send nothing
 f75ctl --dongle ...        use the dongle when the cable is also plugged in
 ```
 
-`gif` needs pillow, the ambilight background needs grim; the built-in analyser needs numpy and
+`gif` needs pillow; the built-in analyser needs numpy and
 soundcard. Everything else needs only Python 3.11+.
 
 ---

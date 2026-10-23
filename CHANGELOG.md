@@ -4,11 +4,10 @@
 - The widget can switch the effect the accent is shown as, and start and stop the music
   visualiser (dark or the theme colour behind the bars). New `omarchy-keyboard-accent
   set-effect`.
-- `f75ctl music --background` also takes a hex colour. The ambilight background no longer
-  needs pillow and ignores grey and white areas, so a neutral screen gives a dark background
-  instead of white. It follows the focused window by default (`--ambilight-area window`,
-  or `monitor` / `all`); before, it averaged both monitors, so it was unclear what it
-  followed.
+- `f75ctl music --background` also takes a hex colour.
+- Removed the ambilight background (the screen's colour behind the bars). It was unclear
+  what it followed, an ordinary desktop turned it white, and it cost 44-74 % of a CPU core
+  against about 4 % for music without it; the theme background covers what it was for.
 - Stopping music no longer leaves the keyboard rejecting the theme apply: Ctrl+C and
   SIGTERM now stop between frames.
 - Changing the music background in the widget while music runs restarts it with the new
@@ -30,7 +29,7 @@
   longer apply are ignored.
 - New `f75ctl`: effects, per-key colours (also over the dongle), remaps and macros with
   key combos in one layer, LCD clock and images, music visualiser (cava or built-in,
-  ambilight background), battery.
+  colour backgrounds), battery.
 - udev rule: also grants the LCD image interface; the dongle rule matches its command
   interface only.
 - Handbook rewritten from verified facts, each marked seen/read/sent/assumed.

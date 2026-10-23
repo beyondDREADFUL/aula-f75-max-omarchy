@@ -79,12 +79,12 @@ f75ctl music --background 202020              # spectrum bars; Ctrl+C returns to
 f75ctl battery                                # 2.4 GHz only
 ```
 
-`f75ctl --dry-run ...` prints the packets instead of sending them. `music` uses [cava](https://github.com/karlstav/cava) when installed, else needs `numpy` and `soundcard`; its `ambilight` background (the screen's dominant colour) needs `grim`.
+`f75ctl --dry-run ...` prints the packets instead of sending them. `music` uses [cava](https://github.com/karlstav/cava) when installed, else needs `numpy` and `soundcard`.
 
 ## Requirements
 
 - An AULA F75 Max and Omarchy. Tested on Omarchy 4.0.6 (Arch, Hyprland); other versions are untested.
-- `python3` 3.11+ and `jq` (widget). Optional: `cava`, `python-pillow`, `grim`, or `numpy` + `soundcard`.
+- `python3` 3.11+ and `jq` (widget). Optional: `cava` (music), `python-pillow` (LCD images), or `numpy` + `soundcard` (music without cava).
 - `install.sh` needs root once for a udev rule, a systemd one-shot unit and the `aula` group.
 
 ## What works where
