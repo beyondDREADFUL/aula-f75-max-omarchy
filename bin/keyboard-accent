@@ -8,7 +8,8 @@
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
 #   effect  NAME|default                show the accent as this effect (default: config's)
-#   music   start [off|ambilight]       start the music visualiser (USB cable only)
+#   music   start [off|theme]           start the music visualiser (USB cable only);
+#                                       theme puts the theme colour, dimmed, behind the bars
 #   music   stop                        stop it; the keyboard returns to the theme colour
 #
 # --exact uses the colour as written. Without it the controller applies the
@@ -149,12 +150,19 @@ effect)
 music)
     case "${1:-}" in
     start)
-        background=${2:-off}
-        [[ $background =~ ^(off|ambilight)$ ]] || fail "unknown background $background"
+        case "${2:-off}" in
+        off) background=(--background off) ;;
+        theme)
+            theme=$("$CONTROLLER" status 2>/dev/null | awk '/^target:/ {print $2}')
+            valid_hex "$theme" || fail "could not read the theme colour"
+            background=(--background "${theme#\#}" --background-brightness 30)
+            ;;
+        *) fail "unknown background ${2}" ;;
+        esac
         if ! music_pid >/dev/null; then
             mkdir -p "$STATE_DIR"
             # setsid detaches it from the widget; it runs until `music stop`
-            nohup setsid "$F75CTL" music --background "$background" >"$MUSIC_LOG" 2>&1 </dev/null &
+            nohup setsid "$F75CTL" music "${background[@]}" >"$MUSIC_LOG" 2>&1 </dev/null &
             echo $! >"$MUSIC_PID"
             sleep 1.5
             if ! music_pid >/dev/null; then
@@ -172,7 +180,7 @@ music)
         rm -f "$MUSIC_PID"
         jq -nc '{ok: true, music: false}'
         ;;
-    *) fail "usage: music start [off|ambilight] | music stop" ;;
+    *) fail "usage: music start [off|theme] | music stop" ;;
     esac
     ;;
 

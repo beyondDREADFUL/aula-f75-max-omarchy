@@ -75,11 +75,11 @@ f75ctl keycolors esc=ff0000 w=00ff00 --default 202020
 f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c  # remaps and macros, one layer per command
 f75ctl reset-keymap
 f75ctl gif cat.gif                            # LCD image or animation (needs pillow)
-f75ctl music --background ambilight           # spectrum bars; Ctrl+C returns to the theme
+f75ctl music --background 202020              # spectrum bars; Ctrl+C returns to the theme
 f75ctl battery                                # 2.4 GHz only
 ```
 
-`f75ctl --dry-run ...` prints the packets instead of sending them. `music` uses [cava](https://github.com/karlstav/cava) when installed, else needs `numpy` and `soundcard`; its `ambilight` background needs `grim` and pillow.
+`f75ctl --dry-run ...` prints the packets instead of sending them. `music` uses [cava](https://github.com/karlstav/cava) when installed, else needs `numpy` and `soundcard`; its `ambilight` background (the screen's dominant colour) needs `grim`.
 
 ## Requirements
 

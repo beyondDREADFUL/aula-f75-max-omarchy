@@ -38,6 +38,16 @@ def rgb(text: str):
     return tuple(bytes.fromhex(text))
 
 
+def _background(text: str) -> str:
+    if text in music.BACKGROUNDS:
+        return text
+    hexpart = text.lstrip("#").lower()
+    if len(hexpart) != 6 or any(c not in "0123456789abcdef" for c in hexpart):
+        raise argparse.ArgumentTypeError(
+            f"{text!r}: use off, spectrum-cycle, ambilight, a colour name or RRGGBB")
+    return hexpart
+
+
 def cmd_light(kb, a):
     kb.light(lighting.Effect(a.mode, a.color, a.brightness, a.speed, a.direction))
 
@@ -152,7 +162,8 @@ def build_parser():
     s.add_argument("--fps", type=float, default=20)
     s.add_argument("--color", choices=music.BAR_COLORS, default="rainbow", help="bar colours")
     s.add_argument("--amplitude", type=int, default=3, choices=range(1, 6), help="sensitivity")
-    s.add_argument("--background", choices=music.BACKGROUNDS, default="off")
+    s.add_argument("--background", type=_background, default="off",
+                   help="off, spectrum-cycle, ambilight, a colour name or RRGGBB")
     s.add_argument("--background-brightness", type=int, default=100, metavar="PERCENT")
     s.add_argument("--after", choices=["theme", *lighting.MODES], default="theme",
                    help="what to show when done (default: the theme accent)")

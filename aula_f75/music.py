@@ -2,8 +2,8 @@
 
 Levels come from cava when it is installed (its own PipeWire/PulseAudio input, smoothing and
 auto-sensitivity), else from a numpy FFT of the system audio (needs numpy and soundcard).
-The background can be a solid colour, a slow hue cycle, or "ambilight": the screen's colour,
-sampled with grim (needs pillow). Live frames bypass the firmware's white balance, so every
+The background can be off, a named or hex colour, a slow hue cycle, or "ambilight": the
+screen's dominant colour, sampled with grim. Live frames bypass the firmware's white balance, so every
 colour goes through lighting.calibrate to look the same as an effect.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ class MusicError(RuntimeError):
 class Options:
     fps: float = 20
     bars: str = "rainbow"              # one of BAR_COLORS
-    background: str = "off"            # one of BACKGROUNDS
+    background: str = "off"            # one of BACKGROUNDS, or RRGGBB
     background_brightness: int = 100   # percent
     amplitude: int = 3                 # sensitivity 1-5
     source: str = "auto"               # one of SOURCES
@@ -77,7 +77,8 @@ def bars_frame(levels, opts: Options, t=0.0, ambient=(0, 0, 0)):
         bg = (0, 0, 0)
     else:
         base = (_hsv(t / 10) if opts.background == "spectrum-cycle" else
-                ambient if opts.background == "ambilight" else SOLID[opts.background])
+                ambient if opts.background == "ambilight" else
+                SOLID.get(opts.background) or tuple(bytes.fromhex(opts.background)))
         bg = tuple(c * opts.background_brightness // 100 for c in base)
     colors = {}
     for slot, (row, col) in POS.items():
@@ -87,23 +88,33 @@ def bars_frame(levels, opts: Options, t=0.0, ambient=(0, 0, 0)):
 
 
 def screen_color():
-    """Average screen colour, weighted toward saturated pixels so a grey desktop doesn't
-    wash out the coloured parts, normalized to full brightness; black for a dark screen."""
-    import io
-    from PIL import Image
+    """The screen's dominant colour at full brightness, or black when the screen is mostly
+    neutral. Each pixel counts by its chroma, so grey, white and black areas don't count:
+    a plain desktop averages out to near grey, which shows as white on the keys."""
     shot = subprocess.run(["grim", "-t", "ppm", "-s", "0.05", "-"], capture_output=True,
                           check=True).stdout
-    raw = Image.open(io.BytesIO(shot)).convert("RGB").resize((32, 18)).tobytes()
-    total, weight = [0, 0, 0], 0
-    for k in range(0, len(raw), 3):
-        px = raw[k:k + 3]
-        w = max(px) - min(px) + 8
+    # binary PPM: "P6", width, height, maxval as ASCII separated by whitespace, then RGB
+    fields, pos = [], 0
+    while len(fields) < 4:
+        while shot[pos:pos + 1].isspace():
+            pos += 1
+        end = pos
+        while not shot[end:end + 1].isspace():
+            end += 1
+        fields.append(shot[pos:end])
+        pos = end
+    raw = shot[pos + 1:]
+    total, weight, pixels = [0, 0, 0], 0, len(raw) // 3
+    for k in range(0, pixels * 3, 3):
+        r, g, b = raw[k], raw[k + 1], raw[k + 2]
+        w = max(r, g, b) - min(r, g, b)
         weight += w
-        for i in range(3):
-            total[i] += px[i] * w
-    avg = [c / weight for c in total]
-    if max(avg) < 16:
+        total[0] += r * w
+        total[1] += g * w
+        total[2] += b * w
+    if pixels == 0 or weight / pixels < 12:      # mostly neutral: no background
         return (0, 0, 0)
+    avg = [c / weight for c in total]
     return tuple(int(c * 255 / max(avg)) for c in avg)
 
 

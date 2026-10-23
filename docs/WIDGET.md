@@ -33,8 +33,8 @@ Reset to theme (or right-click the dot). Open the picker from a keybinding with
 once (`omarchy-keyboard-accent set-effect NAME`) and is remembered over the config's
 `[lighting] effect`.
 
-**Music visualiser** starts `f75ctl music` in the background with a dark or ambilight
-background (ambilight needs grim and pillow); switching it off returns the keyboard to the
+**Music visualiser** starts `f75ctl music` in the background, behind the bars either dark
+or the theme colour at 30 %; switching it off returns the keyboard to the
 theme colour. It needs the USB cable. A theme change while it runs is applied when it
 stops. `omarchy-shell beyond.keyboard-accent music` toggles it from a keybinding.
 

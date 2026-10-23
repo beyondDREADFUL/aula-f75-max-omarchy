@@ -290,9 +290,12 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
   is used so it never lags), else a numpy FFT of the system audio via `soundcard`, which
   reads exactly the audio produced since its last read (reading a fixed amount fell ~20 s
   behind over 30 s).
-- Backgrounds: solid colours, a hue cycle, or `ambilight`: the screen colour from a 5 %
-  `grim` screenshot in a background thread, weighted toward saturated pixels and eased
-  25 % per frame.
+- Backgrounds: a named or hex colour at a chosen brightness (the widget uses the theme
+  colour at 30 %), a hue cycle, or `ambilight`: the screen's dominant colour from a 5 %
+  `grim` screenshot in a background thread. Pixels count by their chroma, so grey, white
+  and black areas don't count, and a mostly neutral screen gives no background (an
+  ordinary desktop averaged to near grey, which showed as white, **seen**). The colour
+  eases 25 % per frame.
 - Holds the keyboard lock while running; a theme change meanwhile waits up to 15 s, then is
   deferred, and `music` applies the theme accent when it stops (`--after theme`, default).
 - Ctrl+C and SIGTERM only set a flag that the loop checks between frames. Stopping inside a
@@ -353,7 +356,7 @@ f75ctl --dry-run ...       print cable packets, send nothing
 f75ctl --dongle ...        use the dongle when the cable is also plugged in
 ```
 
-`gif` and the ambilight background need pillow; the built-in analyser needs numpy and
+`gif` needs pillow, the ambilight background needs grim; the built-in analyser needs numpy and
 soundcard. Everything else needs only Python 3.11+.
 
 ---

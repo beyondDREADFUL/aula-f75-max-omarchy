@@ -34,7 +34,7 @@ Panel {
   property string previewHex: ""      // same, for the hex field
   property string message: ""
   property bool failed: false
-  property string musicBackground: "off"   // "off" or "ambilight"
+  property string musicBackground: "off"   // "off" or "theme" (theme colour behind the bars)
 
   readonly property string helperPath: String(Qt.resolvedUrl("bin/keyboard-accent")).replace(/^file:\/\//, "")
   readonly property var presets: ["#FF0000", "#FF8000", "#FFD000", "#00C853", "#00A0FF", "#8839EF", "#FF2D95"]
@@ -726,7 +726,7 @@ Panel {
           spacing: Style.space(6)
 
           Repeater {
-            model: ["off", "ambilight"]
+            model: ["off", "theme"]
 
             Rectangle {
               required property string modelData
@@ -741,7 +741,7 @@ Panel {
               Text {
                 id: chipText2
                 anchors.centerIn: parent
-                text: modelData === "off" ? "Dark" : "Ambilight"
+                text: modelData === "off" ? "Dark" : "Theme"
                 color: parent.picked ? root.bg : root.fg
                 font.family: root.family
                 font.pixelSize: Style.font.caption
