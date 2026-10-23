@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-23 (v2)
+- Rebuilt on `aula_f75`, a protocol library with every command checked on the keyboard
+  (cable and dongle). The controller, `f75ctl` and the music visualiser share it and one
+  lock, so they never interleave packets; a theme change during `f75ctl music` is applied
+  when the music stops.
+- Corrected the model of the keyboard (docs/HANDBOOK.md §14): the keys are in the slots
+  effects write, the 61 "direct" slots are empty, there is no separate underglow, and the
+  firmware's red gain is a correct white balance. Removed the direct-frame write, the zone
+  bootstrap, the table cache, `match_direct_zone` and `underglow_correction`. A wired apply
+  is now one effect command (about 0.57 s including the LCD clock).
+- New config: `[lighting] effect`, `speed`, `direction` (show the accent as any of the 19
+  effects) and `[lcd] clock` (sync the LCD clock on every wired apply). v1 keys that no
+  longer apply are ignored.
+- New `f75ctl`: effects, per-key colours (also over the dongle), remaps and macros with
+  key combos in one layer, LCD clock and images, music visualiser (cava or built-in,
+  ambilight background), battery.
+- udev rule: also grants the LCD image interface; the dongle rule matches its command
+  interface only.
+- Handbook rewritten from verified facts, each marked seen/read/sent/assumed.
+
 ## 2026-10-22 (plugin layout)
 - The widget now sits at the repository root (`manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent`) so `omarchy plugin add <repo url>` works and the repo can be listed on the Omarchy plugin marketplace. Added `license` to the manifest and a `preview.png`. `plugin/README.md` moved to `docs/WIDGET.md`. The widget now says "Controller missing: run install.sh (see README)" when `omarchy-keyboard-accent` is not installed.
 

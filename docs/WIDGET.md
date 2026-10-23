@@ -18,8 +18,8 @@ A colour picked here is sent exactly as chosen
 no override in the config still get the controller's automatic choice, which keeps
 muted accents vivid and turns grey ones into a soft white.
 
-The underglow is calibrated by the keyboard firmware separately and cannot be
-set exactly. Pure white keys come with a cyan-tinted underglow.
+The keyboard's firmware applies its own white balance to every colour, so what
+the keys show matches the colour picked (docs/HANDBOOK.md §5).
 
 A custom colour lasts until the next theme change, when the theme hook sets the
 keyboard back to the theme colour. Turn on **Keep this colour** to pin it

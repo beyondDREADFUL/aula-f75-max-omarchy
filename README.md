@@ -1,29 +1,29 @@
 # omarchy-aula-f75-max-accent
 
-Makes the **AULA F75 Max** keyboard's lighting follow your [Omarchy](https://omarchy.org) theme accent, on the wired USB connection and on the 2.4 GHz dongle. Includes an optional bar widget to see and change the colour.
+Makes the **AULA F75 Max** keyboard's lighting follow your [Omarchy](https://omarchy.org) theme accent, over the USB cable and the 2.4 GHz dongle, with an optional bar widget to see and change the colour. Also includes `f75ctl`, a command line for everything else the vendor app does: lighting effects, per-key colours, remaps and macros, the LCD clock and images, and a music visualiser.
 
 ![Bar widget popup](docs/popup.png)
 
 https://github.com/user-attachments/assets/88de778c-60dc-4bb4-acfe-c5b5afe39300
 
-**This only works with the AULA F75 Max.** It talks to the keyboard's own HID protocol (wired `0c45:800a`, dongle `05ac:024f`). Other keyboards use different protocols, so they would need a different controller. The bar widget is a thin front end over the controller's CLI.
+**This only works with the AULA F75 Max** (wired `0c45:800a`, dongle `05ac:024f`). Other keyboards use different protocols.
 
 ## What's in it
 
 | Path | Installs to | Purpose |
 |---|---|---|
-| `bin/omarchy-keyboard-accent` | `~/.local/bin` | Controller (Python 3, no dependencies). Reads the theme accent and writes it to the keyboard. |
-| `bin/omarchy-keyboard-accent-queue` | `~/.local/bin` | Debounced, single-flight dispatch so theme switching never blocks. |
-| `hooks/keyboard-accent.sh` | `~/.config/omarchy/hooks/{theme-set.d,post-boot.d}` | Runs the queue on theme change and at login. |
-| `system/65-aula-f75-max.rules` | `/etc/udev/rules.d` | Grants access to the keyboard's HID node and triggers an apply on plug/unplug. |
-| `system/aula-keyboard-accent.service.in` | `/etc/systemd/system` | One-shot apply service started by udev. |
-| `config.example.toml` | `~/.config/omarchy/keyboard-accent/config.toml` | Saturation and lightness limits, per-theme overrides. Not overwritten if it exists. |
-| `manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | Bar widget (needs `jq` and the controller above). See [docs/WIDGET.md](docs/WIDGET.md). |
-| `docs/HANDBOOK.md` | | Protocol notes, design, troubleshooting. |
-| `install.sh`, `uninstall.sh` | | Install and remove everything above. Both take `--dry-run`. |
-| `CHANGELOG.md` | | What changed and when. |
+| `aula_f75/` | `~/.local/share/omarchy-keyboard-accent` | Protocol library (Python standard library only), shared by everything below |
+| `accent/`, `bin/omarchy-keyboard-accent` | same, and `~/.local/bin` | Reads the theme accent and sets the keyboard |
+| `bin/omarchy-keyboard-accent-queue` | `~/.local/bin` | Debounced, single-flight dispatch so theme switching never blocks |
+| `bin/f75ctl` | `~/.local/bin` | Command line for effects, per-key colours, keymaps, macros, LCD, music |
+| `hooks/keyboard-accent.sh` | `~/.config/omarchy/hooks/{theme-set.d,post-boot.d}` | Runs the queue on theme change and at login |
+| `system/65-aula-f75-max.rules` | `/etc/udev/rules.d` | Access to the keyboard's command and LCD interfaces; applies on plug/unplug |
+| `system/aula-keyboard-accent.service.in` | `/etc/systemd/system` | One-shot apply started by udev |
+| `config.example.toml` | `~/.config/omarchy/keyboard-accent/config.toml` | Effect, colour choice, per-theme colours. Not overwritten if it exists |
+| `manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | Bar widget (needs `jq`). See [docs/WIDGET.md](docs/WIDGET.md) |
+| `docs/HANDBOOK.md` | | Protocol reference, design, troubleshooting |
 
-Event-driven, no daemon and no polling.
+Event-driven: no daemon and no polling. Every program takes one shared lock on the keyboard, so they never interleave packets.
 
 ## Install
 
@@ -40,8 +40,6 @@ omarchy-keyboard-accent apply
 omarchy plugin enable beyond.keyboard-accent && omarchy restart shell
 ```
 
-The bar widget can also be added on its own with `omarchy plugin add https://github.com/beyondDREADFUL/omarchy-aula-f75-max-accent --enable`, but it only drives the controller: run `./install.sh` from the cloned folder (`~/.config/omarchy/plugins/beyond.keyboard-accent`) first, or it will show nothing.
-
 ## Uninstall
 
 ```bash
@@ -50,30 +48,52 @@ The bar widget can also be added on its own with `omarchy plugin add https://git
 ./uninstall.sh --dry-run  # show what would be removed
 ```
 
-It removes the scripts, hooks, plugin, udev rule and systemd unit. The `aula` group is left in place (`sudo groupdel aula` removes it). Run `omarchy restart shell` afterwards to drop the bar widget.
+The `aula` group is left in place (`sudo groupdel aula` removes it). Run `omarchy restart shell` afterwards to drop the bar widget.
 
 ## Use
 
 ```bash
 omarchy-keyboard-accent status
-omarchy-keyboard-accent apply --color '#FF0000'          # until next theme change
+omarchy-keyboard-accent apply --color '#FF0000'          # until the next theme change
 omarchy-keyboard-accent apply --exact --color '#FFFFFF'  # use the colour as written
 omarchy-keyboard-accent apply --pin --color '#FF0000'    # keep it across theme changes
 omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the theme colour
 ```
 
-The widget: left-click opens the picker, right-click resets to the theme. Switch on "Keep this colour" to pin a colour through theme changes. `omarchy-shell beyond.keyboard-accent toggle` opens it from a keybinding.
+Set `effect = "breath"` (or any of the 19 effects) under `[lighting]` in the config to show the accent as an animation instead of a static colour.
+
+The widget: left-click opens the picker, right-click resets to the theme. "Keep this colour" pins a colour through theme changes. `omarchy-shell beyond.keyboard-accent toggle` opens it from a keybinding.
+
+```bash
+f75ctl light breath -c 00ffff                 # any effect, colour, -b brightness, -s speed
+f75ctl demo                                   # step through all 19 effects
+f75ctl keycolors esc=ff0000 w=00ff00 --default 202020
+f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c  # remaps and macros, one layer per command
+f75ctl reset-keymap
+f75ctl gif cat.gif                            # LCD image or animation (needs pillow)
+f75ctl music --background ambilight           # spectrum bars; Ctrl+C returns to the theme
+f75ctl battery                                # 2.4 GHz only
+```
+
+`f75ctl --dry-run ...` prints the packets instead of sending them. `music` uses [cava](https://github.com/karlstav/cava) when installed, else needs `numpy` and `soundcard`; its `ambilight` background needs `grim` and pillow.
 
 ## Requirements
 
-- An AULA F75 Max (wired USB or the 2.4 GHz dongle) and Omarchy. Tested on Omarchy 4.0.6 (Arch, Hyprland); other versions are untested.
-- `python3` (controller), `jq` (widget helper), `sudo` once for `install.sh`.
-- `install.sh` needs root for three things: a udev rule, a systemd one-shot unit, and adding you to a system group `aula` so the keyboard's HID node is writable without root. `./install.sh --dry-run` prints them; `./uninstall.sh` removes them (the group stays).
-- It never overwrites an existing `~/.config/omarchy/keyboard-accent/config.toml`.
+- An AULA F75 Max and Omarchy. Tested on Omarchy 4.0.6 (Arch, Hyprland); other versions are untested.
+- `python3` 3.11+ and `jq` (widget). Optional: `cava`, `python-pillow`, `grim`, or `numpy` + `soundcard`.
+- `install.sh` needs root once for a udev rule, a systemd one-shot unit and the `aula` group.
 
-## License
+## What works where
 
-MIT, see [LICENSE](LICENSE).
+| Feature | USB cable | 2.4 GHz dongle |
+|---|---|---|
+| Theme accent, effects, brightness kept | yes | yes (brightness from the last apply) |
+| Per-key colours | yes | yes |
+| Remaps and macros, base layer | yes | yes |
+| Fn layer | yes | no |
+| LCD clock and images | yes | no |
+| Music visualiser | yes | no |
+| Battery level | no | yes |
 
 ## Tests
 
@@ -81,10 +101,8 @@ MIT, see [LICENSE](LICENSE).
 python3 -m unittest discover tests
 ```
 
-Covers colour parsing and the automatic colour choice. Hardware behaviour is checked with `apply --verify`.
+Covers the packet builders against bytes verified on the keyboard, the calibration model against read-back values, and the colour choice. `omarchy-keyboard-accent apply --verify` checks the keys on the hardware.
 
-## Limits
+## License
 
-- The underglow is calibrated by the firmware, so exact colours (white in particular) can't be reproduced there.
-- The dongle has no readback and supports a single static colour.
-- Tested on one machine (Arch, Omarchy, Hyprland). Treat it as a starting point.
+MIT, see [LICENSE](LICENSE).

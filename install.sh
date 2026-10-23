@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installs the controller, hooks, udev rule, systemd unit and bar plugin.
+# Installs the controller, f75ctl, hooks, udev rule, systemd unit and bar plugin.
 # Run as your normal user; sudo is used only for the udev rule and unit.
 # Pass --dry-run to print the root commands instead of running them.
 set -eu
@@ -16,7 +16,14 @@ for tool in python3 jq; do
     command -v "$tool" >/dev/null || echo "warning: $tool not found (the controller needs python3, the widget needs jq)" >&2
 done
 
+# the libraries the commands import; replaced as a whole so removed modules don't linger
+lib="$HOME/.local/share/omarchy-keyboard-accent"
+rm -rf "$lib/aula_f75" "$lib/accent"
+mkdir -p "$lib"
+cp -r "$here/aula_f75" "$here/accent" "$lib/"
+find "$lib" -name __pycache__ -prune -exec rm -rf {} +
 install -Dm755 "$here/bin/omarchy-keyboard-accent" "$HOME/.local/bin/omarchy-keyboard-accent"
+install -Dm755 "$here/bin/f75ctl" "$HOME/.local/bin/f75ctl"
 install -Dm755 "$here/bin/omarchy-keyboard-accent-queue" "$HOME/.local/bin/omarchy-keyboard-accent-queue"
 for d in theme-set.d post-boot.d; do
     install -Dm755 "$here/hooks/keyboard-accent.sh" "$HOME/.config/omarchy/hooks/$d/keyboard-accent.sh"

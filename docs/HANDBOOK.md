@@ -1,895 +1,404 @@
-# AULA F75 Max — Omarchy Theme Sync Handbook
+# AULA F75 Max on Omarchy: handbook
 
-How the AULA F75 Max keyboard follows the Omarchy theme accent: architecture,
-protocols, colour pipeline, installation, the bar widget, and troubleshooting.
+How the keyboard is controlled, what is known about its protocol and how sure we are,
+and how the accent controller and `f75ctl` use it.
 
-- Platform: Arch-based Omarchy, Hyprland
-- Keyboard: AULA F75 Max, two transports: wired USB and a 2.4 GHz dongle
-- Controller: `~/.local/bin/omarchy-keyboard-accent`
-- Bar widget: `~/.config/omarchy/plugins/beyond.keyboard-accent`
-- Source: <https://github.com/beyondDREADFUL/omarchy-aula-f75-max-accent>
-- Last verified: 2026-10-22, wired and wireless, on hardware
+- Keyboard: AULA F75 Max, wired `0c45:800a` and 2.4 GHz dongle `05ac:024f`
+- Platform: Omarchy on Arch (Hyprland), Linux hidraw
+- Last verified: 2026-10-23, cable and dongle, on the reference keyboard
 
-Measurements and file listings below come from the reference unit this was
-developed on. Other F75 Max units and firmware revisions may differ in
-calibration (§6.3) and device paths.
+Every protocol statement is marked by how it was established:
 
----
-
-## 1. At a glance
-
-| Item | Value |
+| Mark | Meaning |
 |---|---|
-| Wired `apply` | about 0.7 s (about 1 s with `--verify`) |
-| Wireless `apply` | about 0.2 s |
-| Daemons | None: event-driven hooks and a one-shot udev service |
-| Per-theme colours | `[theme_overrides]` in the config; none are required |
+| **seen** | checked by eye on the keyboard |
+| **read** | read back from the keyboard (LED table, acks, battery) |
+| **sent** | the keyboard accepted it (ack) but the effect was not looked at |
+| **assumed** | not checked; treat as a hypothesis |
+
+Measurements come from one keyboard. Other units or firmware may differ, especially in
+calibration (§5) and timing (§3.4).
 
 ---
 
-## 2. Architecture
-
-Two independent USB devices with two unrelated protocols. The controller
-detects whichever is present and uses the matching writer.
+## 1. Overview
 
 ```
-theme change ──> ~/.config/omarchy/hooks/theme-set.d/keyboard-accent.sh
-login        ──> ~/.config/omarchy/hooks/post-boot.d/keyboard-accent.sh
-                        │
-                        ▼
-        ~/.local/bin/omarchy-keyboard-accent-queue
-        (writes request token, detaches one worker, 0.35 s debounce)
-                        │
-                        ▼
-        ~/.local/bin/omarchy-keyboard-accent apply
-                        │
-        ┌───────────────┴───────────────┐
-        ▼                               ▼
-   wired 0C45:800A                 dongle 05AC:024F
-   64-byte feature reports         32-byte OUTPUT reports
-   per-key frame + static          static effect only
-   reads table, infers brightness  stored brightness, no readback
+theme change ──> hooks/theme-set.d ──┐
+login        ──> hooks/post-boot.d ──┼─> omarchy-keyboard-accent-queue (debounce)
+plug/unplug  ──> udev ─> systemd ────┘            │
+                                                  ▼
+bar widget ──> bin/keyboard-accent ──> omarchy-keyboard-accent apply   (accent/)
+                                                  │
+you ──> f75ctl light|keycolors|remap|music|... ───┤                    (aula_f75/cli.py)
+                                                  ▼
+                                        aula_f75 library, one lock
+                                          │                 │
+                                   cable 0c45:800a     dongle 05ac:024f
 ```
 
-The bar widget (§18) is a separate front end. It reads the theme and keyboard
-state through a small helper and applies colours by calling the controller's
-CLI; it never talks to the hardware itself.
-
-Hotplug path: udev `add/change` and `remove` events set
-`SYSTEMD_WANTS=aula-keyboard-accent.service`, which runs one `apply` as the
-desktop user. No polling, nothing resident.
-
----
-
-## 3. Hardware and transports
-
-### 3.1 Wired keyboard
-
-| Property | Value |
+| Part | Role |
 |---|---|
-| USB ID | `0c45:800a` (SONiX / Microdia) |
-| Interface | 03 (MI_03) |
-| Usage page | `0xFF13` |
-| Device node | `/dev/input/by-id/usb-SONiX_AULA_F75Max-if03-hidraw` |
-| Report type | 64-byte **feature** reports |
-| LED entries | 144 (9 pages × 64 bytes = 576 bytes) |
-| Zone split | 83 effect/underglow + 61 direct/keys |
+| `aula_f75/` | Protocol library, standard library only. `hidraw.py` (find nodes, ioctls), `device.py` (cable and dongle behind one interface, the lock), `layout.py`, `lighting.py`, `keymap.py`, `lcd.py`, `music.py`, `cli.py` (`f75ctl`) |
+| `accent/` | Theme accent to keyboard: `color.py` (colour choice), `config.py` (config, state, pin, theme), `controller.py` (the `omarchy-keyboard-accent` command) |
+| `bin/` | Thin entry points: `omarchy-keyboard-accent`, `omarchy-keyboard-accent-queue`, `f75ctl`, `keyboard-accent` (widget helper) |
+| `KeyboardAccent.qml`, `manifest.json` | Bar widget (docs/WIDGET.md) |
+| `hooks/`, `system/` | Omarchy hooks, udev rule, one-shot systemd unit |
 
-Only interface 03 is opened. The keyboard and consumer-control interfaces are
-never touched.
-
-### 3.2 2.4 GHz dongle
-
-| Property | Value |
-|---|---|
-| USB ID | `05ac:024f` (masquerades as an Apple aluminium keyboard) |
-| Command node | the hidraw node whose report descriptor has usage page `0xFF60` with a 32-byte output report |
-| Report type | 32-byte **OUTPUT** report, report ID 0 |
-| Linux write framing | 33 bytes: leading `0x00` report ID then the 32-byte packet |
-| LED control | firmware static effect only, no per-key frame, no readback |
-| This unit's node | `/dev/hidraw9` (can change across boots) |
-
-On this machine the dongle exposes several hidraw nodes (keyboard, mouse,
-consumer). Only the `0xFF60` node is a command channel; the rest are normal
-input endpoints and are ignored. Detection reads the report descriptor, not
-just the USB ID.
-
-### 3.3 Do not confuse with `258A:010C`
-
-That is a different 2.4 GHz keyboard family with a different packet layout.
-Sending the `05AC:024F` protocol to it would produce garbage. Detection is by
-USB ID plus descriptor, so it is never selected.
+Nothing runs in the background. The theme hook, login hook and udev events each start one
+apply; `f75ctl music` runs only while you run it.
 
 ---
 
-## 4. Files
+## 2. Hardware
 
-| Path | Role |
-|---|---|
-| `~/.local/bin/omarchy-keyboard-accent` | Controller: detection, colour pipeline, both protocols, verification |
-| `~/.local/bin/omarchy-keyboard-accent-queue` | Single-flight debounced dispatcher used by hooks |
-| `~/.config/omarchy/keyboard-accent/config.toml` | Configuration, including per-theme overrides |
-| `~/.config/omarchy/hooks/theme-set.d/keyboard-accent.sh` | Theme-change hook |
-| `~/.config/omarchy/hooks/post-boot.d/keyboard-accent.sh` | Login hook |
-| `~/.local/state/omarchy/keyboard-accent/state.json` | Brightness, transport, target, zone maps, cached frame |
-| `~/.local/state/omarchy/keyboard-accent/keyboard-accent.log` | Apply history, one line per attempt |
-| `~/.local/state/omarchy/keyboard-accent/{lock,worker.lock,request,applied}` | Locking and queue tokens |
-| `/etc/udev/rules.d/65-aula-f75-max.rules` | Access rules and hotplug triggers |
-| `/etc/systemd/system/aula-keyboard-accent.service` | One-shot apply service |
-| `~/.config/omarchy/plugins/beyond.keyboard-accent/` | Bar widget: `KeyboardAccent.qml`, `bin/keyboard-accent` helper, `manifest.json` |
+### 2.1 Cable (`0c45:800a`)
 
-The repository's `install.sh` installs all of the above (§13.3). No daemon, no
-vendor software running.
+| Interface | Usage page | Use |
+|---|---|---|
+| 0, 1 | keyboard, consumer | normal input, never opened |
+| 2 | `0xFF68` | LCD image upload: 4096-byte output reports |
+| 3 | `0xFF13` | commands: 64-byte feature reports |
 
----
+### 2.2 Dongle (`05ac:024f`, masquerades as an Apple keyboard)
 
-## 5. Execution flow
+| Interface | Usage page | Use |
+|---|---|---|
+| 0-2, 4 | keyboard, mouse, consumer, `0xFF59` | input, never opened |
+| 3 | `0xFF60` | commands: 32-byte output reports, input-report replies |
 
-### 5.1 Hook and queue
+Nodes are found through sysfs: `HID_ID` in `device/uevent` and `bInterfaceNumber` of the
+parent USB interface. No hidapi, no descriptor parsing.
 
-`omarchy-theme-set` runs the theme-set hook synchronously. The hook calls
-`omarchy-keyboard-accent-queue`, which:
+### 2.3 The LED table and the 80 keys
 
-1. writes a nanosecond token to `request`,
-2. tries `flock -n` on `worker.lock`,
-3. if it wins, detaches a worker that sleeps **0.35 s** (debounce), then runs
-   `apply` for the *current* theme,
-4. if it loses, returns immediately — the running worker will pick up the
-   newest token.
+The keyboard keeps one table of 144 slots, 4 bytes each: `[slot, R, G, B]` (9 pages of 64
+bytes).
 
-Rapid theme previewing therefore cannot queue a backlog of stale HID writes.
-The hook itself returns in milliseconds.
+| Slots | What they are | How we know |
+|---|---|---|
+| the 80 slots in `layout.KEYS` (Esc = 1 ... Right = 102) | the only visible LEDs, one per key | **seen**: live frames on them light exactly those keys |
+| 95, 110, 111 | written by effects, nothing lights up | **read** + **seen** (streamed red, blue, yellow: nothing visible anywhere) |
+| the other 61 | empty: never written by effects, nothing lights up | **read** + **seen** |
 
-### 5.2 Wired apply — fast path
-
-Used when zone maps are known, the cached frame is valid, and
-`match_direct_zone = false` (the default).
-
-1. Acquire `lock` (15 s timeout, `flock`).
-2. Resolve theme accent → override → target colour; read stored brightness.
-3. **Read page 0 only** (`04 18`, `04 F5` with count 1, `04 02`): carries
-   effect entries 1–13, enough to infer the live brightness level. ~0.12 s.
-4. Build the frame from `table_cache` (the last full frame this script
-   wrote), replace the 61 direct entries with `scale_rgb(target, brightness)`.
-5. Write all 9 pages with `04 20` and commit (`04 02`). **Keys change here**,
-   ~0.4 s in.
-6. Run `set_static` (`04 13` + data packet + `04 F0`): sets mode, colour and
-   brightness for the effect group, and rewrites its calibrated bytes.
-   **Underglow changes here**, ~0.65 s in.
-7. Save state, including the frame that was just written.
-8. Optionally verify (`--verify`), which reads all 9 pages and compares.
-
-Why this order is safe: a probe wrote pure green to every direct entry, then
-ran `set_static`; the green survived and only the effect entries changed.
-`set_static` owns the effect zone,
-the direct frame owns the key zone, and the two do not overwrite each other.
-
-Why cached effect bytes are harmless in the end: every one of the 144 entries
-is covered by one of the two index maps, the direct entries are rewritten from
-the current target, and the effect entries are rewritten by `set_static`. A
-stale cached effect byte cannot survive a successful apply.
-
-They would still show for about 0.25 s, between the frame write and
-`set_static`, as a flash of an old colour on the effect LEDs. So before the
-frame is written its effect entries are set to `expected_effect(target,
-brightness)`, the predicted calibrated colour, and `set_static` then corrects
-them by a step or two.
-
-### 5.3 Wired apply — fallback path
-
-Used on first run, lost state, invalid cache, `match_direct_zone = true`, or a
-failed page-0 read. This is the original conservative order:
-
-1. Full 9-page table read (also used to bootstrap the zone split if unknown).
-2. Infer brightness from the effect group.
-3. `set_static` (effect group).
-4. Full table read to capture the calibrated effect bytes.
-5. `write_direct` with direct entries replaced, effect entries preserved.
-
-~2.8 s without verify, ~3.6 s with it.
-
-### 5.4 Wireless apply
-
-1. Acquire lock, resolve target, read stored brightness (no readback exists).
-2. `os.write(fd, b"\x00" + packet)` — 33 bytes including report ID 0.
-3. Commit packet (`[0]=0x0F`), wait ~50 ms.
-4. Static packet (`05 10 00 01 …`), colour bytes according to
-   `wireless_color_order`, checksum in `[31]`.
-5. Save state with `transport=wireless`, `mode=wireless-static`.
-
-### 5.5 Locking and failure isolation
-
-- One `flock` around the whole apply; a second invocation exits quietly.
-- A protocol error (missed ack) is retried up to 3 times, 0.5 s apart, each
-  attempt reopening the device and re-taking the lock. Other exceptions are
-  logged and the process exits 1; hooks use `|| true`, so a keyboard problem
-  can never break theme switching.
-- State is written atomically (`state.json.tmp` → `os.replace`, mode 0600).
+There is no separate underglow on this keyboard. Slot numbers, HID usages and the 6 x 15
+grid positions come from the vendor's `layouts/rgb-keyboard.xml`.
 
 ---
 
-## 6. Colour pipeline
+## 3. Cable protocol
 
-### 6.1 Resolution order
+### 3.1 Framing
 
-0. A **pinned colour** (`apply --pin --color HEX`, stored in
-   `~/.local/state/omarchy/keyboard-accent/pin.json`) replaces the theme accent
-   on every plain `apply`: theme change, login, hotplug. `unpin` clears it.
-   `apply --color` without `--pin` is a one-off and does not touch the pin.
-1. `apply --color HEX` — explicit one-off colour; with `--exact` it is used as
-   written (`accent_source` becomes `override-exact`), as the widget does.
-2. `[color] mode = "fixed"` — `fixed_color` replaces the theme accent, and is
-   then put through the **same transform** as step 1. The saturation and
-   lightness settings therefore still apply in this mode.
-3. Otherwise the active theme's `accent` from
-   `~/.local/state/omarchy/current/theme/colors.toml`, also transformed.
-4. Exception: if the theme slug has a `[theme_overrides]` entry, that hex is
-   used **verbatim** and the transform is skipped (`accent_source` becomes
-   `theme_override:<slug>`). This is the only path that bypasses
-   the automatic choice.
-
-### 6.2 HSL transform (`vivid`)
-
-- Neutral or pale accents (saturation < 0.12, or light and washed out) become
-  a soft white that keeps the hue (warm 40 degrees if fully grey).
-- Otherwise saturation is kept if already >= 0.80, else raised to
-  `saturation_floor + saturation_gain x saturation` (at most 0.95).
-- Lightness is clamped to `[min_lightness, max_lightness]` (0.46-0.54).
-- With `underglow_correction`, green and blue are scaled down a little (weight
-  1.0 to 0.65) so keys and underglow are both near the intended hue; skipped
-  for low saturation or a hue shift of 8 degrees or less.
-- The result is the *target*; keys use it directly (scaled by brightness),
-  the underglow gets firmware calibration on top.
-
-### 6.3 Firmware calibration (underglow only)
-
-Measured on this unit:
+All commands are 64-byte feature reports with report ID 0:
 
 ```
-CHANNEL_GAIN      = (0.6575, 0.9911, 0.9885)      # R, G, B
-BRIGHTNESS_SCALE  = (0.1805, 0.3750, 0.6598, 0.7848, 1.0000)  # levels 1–5
+04 18                     begin            (04 19 for macros)
+04 <cmd> 00*6 <n>         header: n = number of 64-byte data packets
+<n data packets>
+04 02                     end
+04 f0                     apply (after lighting and keymap commands)
 ```
 
-The live effect group at level 5 reports `#F34820` as **`#A0471F`**. These
-gains are a fitted approximation of the firmware's arithmetic, not an exact
-reproduction of it: applying them with `round()` predicts `#A04720` (blue is
-32 × 0.9885 = 31.632, which rounds to 32), while the keyboard reports 31.
-Measured across five colours the model stays within **±1 per channel**:
+The keyboard echoes each packet as the next feature report. For `04 ..` packets it sets
+byte 3 (after the report ID) to `01` when accepted (**read**). Data packets are echoed but
+never flagged. The keyboard sometimes rejects a transaction right after a large write; one
+retry after 0.5 s has always been enough.
 
-| Target | Live effect | Model | Delta |
+### 3.2 Commands
+
+| Cmd | Data | What it does | Status |
 |---|---|---|---|
-| `#F34820` | `#A0471F` | `#A04720` | `[0, 0, -1]` |
-| `#E6E1D8` | `#98DFD6` | `#97DFD6` | `[1, 0, 0]` |
-| `#2064F3` | `#1463F1` | `#1563F0` | `[-1, 0, 1]` |
-| `#1CF84B` | `#12F64A` | `#12F64A` | `[0, 0, 0]` |
-| `#F3D420` | `#A0D21F` | `#A0D220` | `[0, 0, -1]` |
+| `13` | 1 packet: effect payload (§4.1) | set the lighting effect | **seen**, all 19 modes |
+| `23` | 9 packets: 576-byte colour table (§4.2) | per-key colours, shown with mode `0x80` | **seen** |
+| `11` | 9 packets: layer table (§6) | base-layer keymap | **seen** |
+| `27` | same as `11` | Fn-layer keymap | **seen** |
+| `15` | macro blob (§6.2), begin `04 19`, no `04 f0` | macro store | **seen** |
+| `28` | `00 01 5a YY MM DD hh mm ss 00 wd` (Sunday = 0), no `04 f0` | LCD clock | **seen** |
+| `72` | header byte 2 = frames, bytes 8-9 = chunk count (LE); no data packets | LCD image upload (§7) | **seen** |
+| `20` | up to 8 packets of `[slot, R, G, B]`; no `04 18` / `04 f0` | live frame (§4.3) | **seen** |
+| `F5` | header byte 8 = pages; then read that many feature reports | read the LED table | **read** |
 
-So the firmware's own quantization can differ from `round()` by a couple of
-LSB, and its exact rule is not modelled. This is why verification compares the
-dominant effect colour with a tolerance of 18 (summed channel deltas) rather
-than expecting an exact match; a 1-LSB difference is invisible.
+A battery query (`04 ..` form of `20 01`) is answered with `ff`: the cable does not report
+the battery (**read**).
 
-Red is attenuated by roughly a third, which means near-neutral or warm colours
-shift toward green/cyan in the underglow, while keys stay exactly as written.
-At normal viewing this is not noticeable (verified with the `white` override:
-keys `#E6E1D8`, underglow `#98DFD6`). With `--exact` and pure white the keys
-show `#FFFFFF` and the underglow `#A8FDFD`, a visibly cool tint that cannot be
-corrected from software.
+### 3.3 Reading the LED table
 
-### 6.4 Per-theme overrides
+`04 18`, `04 F5 00 00 00 00 00 00 <pages>`, then one feature read per page (25 ms apart),
+then `04 02`. Page 0 holds slots 0-15, which includes Esc and F1-F12; that is enough to
+learn the brightness (§5.2).
 
-`[theme_overrides]` pins a hex colour to a theme slug. It is used verbatim,
-bypassing the automatic choice, so later changes to the `[color]` settings
-cannot alter a pinned theme. Delete a line to fall back to the
-automatic transform for that theme. The automatic choice reproduces the
-hand-picked set for 29 of the 34 bundled themes, so `config.example.toml` only
-ships the bundled themes (plus Fireside), only Kanagawa and Fireside needing the wallpaper.
+### 3.4 Timing on Linux
 
-The shipped values follow each theme's own accent (`accent` in its
-`colors.toml`), so the keyboard matches the colour Omarchy highlights on
-screen. Strongly saturated accents are kept; muted ones keep their hue with
-saturation raised to `0.55 + 0.5 x saturation` (at most 0.95) and lightness
-held in 0.46-0.54.
-
-Because the underglow's red gain is 0.66 (§6.3), warm colours drift toward
-green and purples toward blue there. For those, green and blue are lowered a
-little until keys and underglow are both close to the intended hue; blues,
-cyans and greens are used as chosen.
-
-Exceptions are themes whose accent cannot show on LEDs, where a colour from the
-wallpaper or a soft white is used instead (each has a comment): Kanagawa (cream
-accent, indigo from the Great Wave), Fireside (grey accent, campfire orange) and
-the grey themes White, Vantablack and Solitude. A set based on wallpapers for
-every theme was tried and rejected: it made nine themes disagree with the
-accent the desktop shows, and automatic hue extraction picked Kanagawa's cream
-sky, so the exceptions were chosen by eye.
-
-- Keys use the override scaled by brightness; the underglow still receives
-  firmware calibration.
-- Near-neutral overrides (white, grey-blue) get a cooler underglow than their
-  keys because of the firmware's red attenuation (§6.3).
-- Two themes may share a colour if they share an accent.
-
----
-
-## 7. Wired protocol reference
-
-All packets are 64-byte feature reports (report ID 0 prepended by the ioctl).
-Commands are `04 <sub>`, and most are followed by an ack poll.
-
-### 7.1 ACK convention
-
-After a command, `GET_FEATURE` echoes the command in bytes `[1]` and `[2]` and
-sets byte `[4] = 0x01` when ready. The controller polls up to 10 times at
-`ACK_POLL` (20 ms inside the current pacing) and raises `ProtocolError` if no
-matching ack arrives.
-
-### 7.2 Commands in use
-
-| Step | Packet | Purpose |
+| Wait | Value | Why |
 |---|---|---|
-| Table access | `04 18` | enter table mode |
-| Read pages | `04 F5 00 00 00 00 00 00 PP` | `PP` = number of pages to serve |
-| Page fetch | `GET_FEATURE` | returns one 64-byte page; pages are sequential |
-| Leave table | `04 02` | end table mode |
-| Static effect | `04 13 00 … 01` | set effect parameters |
-| Static data | `[0]=01 [1..3]=RGB [8]=00 [9]=brightness [10]=speed [11]=direction [14]=AA [15]=55` | colour/mode payload |
-| Static commit | `04 F0` | apply the effect group |
-| Direct begin | `04 20 … PP` | start a 9-page direct frame |
-| Direct data | 9 × 64-byte pages | raw table, 4 bytes per LED |
-| Refresh | 64 zero bytes | as SignalRGB does |
-| Direct commit | `04 02` | end/finish the frame |
+| after each command packet, before reading its echo | 35 ms | the vendor app's `cmd_delaytime`; faster was not needed |
+| between table pages | 25 ms | **read** reliably |
+| after each live-frame packet | 3 ms | without it the ack comes back `00`/`ff` instead of `01` and the display freezes after ~3 s; 3 ms gave 200/200 clean frames (**read**, **seen**) |
+| between LCD chunks | 150 ms | the vendor app sends one about every 160 ms |
 
-### 7.3 Timing constants
-
-```
-FEATURE_SETTLE = 0.010   # before every feature report
-ACK_POLL       = 0.020   # between readiness polls
-PAGE_SETTLE    = 0.025   # between table pages
-```
-
-These are settling gaps, not transfer time: each control transfer already
-returns synchronously. The original values were 35/50/50 ms. They were
-reduced after 20 consecutive `apply --verify` runs and 12 plain applies
-produced no failures. If a future firmware drops frames, restore the older
-values and re-validate with `--verify`.
-
-### 7.4 Zone topology and page 0
-
-The 144 entries are partitioned: 83 effect/underglow, 61 direct/keys. The
-split was derived by applying the same colour at brightness 1 and 5 — effect
-entries change, direct entries do not.
-
-Page 0 (entries 0–15) contains direct entries 0/14/15 and effect entries
-1–13. That is enough for brightness inference, which is why the fast path
-does not need the full table.
-
-Single-page reads were verified byte-identical to the first page of a full
-read, twice in a row.
-
-### 7.5 Verification
-
-`apply --verify` reads the whole table afterwards and checks:
-
-- dominant effect colour within **18** (sum of channel deltas) of
-  `expected_effect(target, brightness)`;
-- dominant direct colour within **6** of `scale_rgb(target, brightness)`.
-
-A pass is logged as `verified=True`; a skipped check logs `verified=skipped`;
-wireless logs `verified=n/a` because there is no readback.
+The Linux `ioctl` returns before the keyboard has processed a packet, which is why the
+live-frame pause is needed on Linux and not on Windows.
 
 ---
 
-## 8. Wireless protocol reference
+## 4. Lighting
 
-### 8.1 Framing
+### 4.1 Effects (`13`, dongle `05`)
 
-`os.write(fd, b"\x00" + packet32)` — 33 bytes on Linux, report ID 0 followed
-by the 32-byte output report. Writing 32 bytes alone was rejected by the
-kernel; this was validated with a virtual UHID device before touching real
-hardware.
+16-byte payload: `mode, R, G, B, 0*4, rainbow, brightness 0-5, speed 0-5, direction 0/1,
+0, 0, aa, 55`. With no colour, effects run as rainbow (`ff0000` + rainbow flag), as the
+vendor app sends them. Static and custom never set the rainbow flag.
 
-### 8.2 Packets
+Modes (names from the vendor's language file, **seen** with `f75ctl demo`):
+`off 00, static 01, single-on 02, single-off 03, glittering 04, falling 05, colourful 06,
+breath 07, spectrum 08, outward 09, scrolling 0A, rolling 0B, rotating 0C, explode 0D,
+launch 0E, ripples 0F, flowing 10, pulsating 11, tilt 12, shuttle 13, custom 80`.
 
-Commit, then the static packet ~50 ms later (the firmware needs the gap):
+Which effects use the single colour has not been checked for every mode (**assumed**
+for most).
 
-```
-commit: 0F ...
-static: 05 10 00 01 [B] [G] [R] .. [11]=colourful [12]=brightness
-        [13]=speed [14]=direction [17]=0xAA [18]=0x55
-checksum: [31] = sum([0..30]) & 0xFF
-```
+### 4.2 Per-key colours (`23` + mode `0x80`)
 
-### 8.3 Colour order
+The 576-byte table is `[slot, R, G, B]` at offset `slot x 4` for each key slot, `aa 55` in
+the last two bytes. Then an effect command with mode `0x80` shows it. Over the dongle the
+same table goes as command `14` (§8).
 
-`wireless_color_order` defaults to `bgr` in the shipped defaults, matching
-most reverse-engineering sources. **This unit needs `rgb`**: with `bgr`, an
-orange target appeared blue, and switching the config to `rgb` produced the
-correct orange. The config comment records this.
+### 4.3 Live frames (`20`)
 
-### 8.4 Limitations
+What is known (**seen** unless noted):
 
-- No per-key frame is documented, and none was found by testing. The whole
-  LED set takes the single accent in static mode.
-- No brightness readback. The stored state level is reused; raising or
-  lowering with the keyboard's own keys while on the dongle is not detected
-  (the wired path does detect it).
-- Brightness is preserved at the last applied level, not reset.
+- A frame patches the slots it names in the LED table, raw (uncalibrated, §5). Entries are
+  addressed by their slot byte, not their position in the frame: an entry for slot 94
+  placed first lit Space, not Esc.
+- **It only shows while frames keep arriving.** One frame shows nothing; a stream shows,
+  and the running effect returns when the stream stops.
+- The host must read the feature-report ack after the header and after `04 02`, or the
+  keyboard stops taking frames after one or two.
+- Frame size and order do not matter: 9 pages sorted by slot and 8 packets in grid order
+  both work.
+- Patched slots keep their values in the table after the stream stops and reappear in the
+  next stream until an effect command rewrites them (**read**).
 
----
-
-## 9. Brightness
-
-### 9.1 Model
-
-```
-effect_value = round(target[channel] * CHANNEL_GAIN[channel] * BRIGHTNESS_SCALE[level - 1])
-key_value    = round(target[channel] * BRIGHTNESS_SCALE[level - 1])
-```
-
-At level 5 the key value is the raw target. The direct frame itself has no
-brightness byte, so keys are scaled in software; the static command does
-carry one, so the firmware scales the effect group. The effect line is the
-fitted model from §6.3, accurate to about ±1 per channel, not the firmware's
-exact arithmetic.
-
-### 9.2 Inference
-
-1. Read the live table (fast path: page 0 only).
-2. Take the dominant effect colour; require at least 80% of sampled effect
-   entries to agree, otherwise fall back to stored brightness.
-3. Predict the effect colour for levels 1–5 from the *previous* target and
-   pick the closest.
-4. Accept only if the error is ≤ 12; otherwise keep the stored level.
-
-This is what preserves a brightness change made with the keyboard's own
-keys: the next `apply` infers the new level instead of resetting it.
-
-### 9.3 `set-brightness N`
-
-Persists a level and reapplies the current colour at that level. It updates
-`brightness` in state, so later applies keep it.
+The music visualiser (§9) is the only user of live frames.
 
 ---
 
-## 10. Performance
+## 5. Colour calibration
 
-Wired fast path, about 0.7 s: page-0 read about 0.12 s, direct frame about
-0.27 s, static effect about 0.19 s, the rest process start and state I/O. Keys
-change about 0.4 s in and the underglow about 0.65 s in. A full table read is
-about 0.3 s. Wireless is about 0.2 s: two packets, no readback.
+### 5.1 The firmware's white balance
 
-The pacing constants (`FEATURE_SETTLE`, `ACK_POLL`, `PAGE_SETTLE`, currently
-10/20/25 ms) were reduced until repeated `apply --verify` runs stopped being
-reliable, then set with margin. Raise them if verification starts failing.
+Effects and per-key colours are stored scaled per channel and by brightness; both store
+identical values (**read**):
 
----
-
-## 11. Configuration reference
-
-`~/.config/omarchy/keyboard-accent/config.toml`:
-
-| Key | Value | Meaning |
+| Requested | Level 5 | Level 3 |
 |---|---|---|
-| `color.mode` | `theme` | follow the active theme (`fixed` uses `fixed_color`) |
-| `color.fixed_color` | `#F34820` | replaces the accent when `mode = "fixed"`; still transformed |
-| `color.saturation_floor` | `0.55` | base saturation for muted accents |
-| `color.saturation_gain` | `0.5` | added per unit of the accent's own saturation |
-| `color.underglow_correction` | `true` | rebalance green/blue so keys and underglow agree |
-| `color.max_lightness` | `0.54` | upper lightness clamp |
-| `color.min_lightness` | `0.46` | lower lightness clamp |
-| `device.path` | `auto` | auto-detect wired or dongle; or set a by-id path |
-| `device.prefer` | `auto` | when both are present: `auto`/`wired` picks wired; use `wireless` while charging |
-| `lighting.default_brightness` | `5` | only used before a live level is known |
-| `lighting.speed` | `3` | static-mode speed (ignored by static) |
-| `lighting.wireless_color_order` | `rgb` | verified for this unit; `bgr` for most sources |
-| `lighting.match_direct_zone` | `false` | `true` matches keys to the calibrated underglow |
-| `theme_overrides` | one line per theme | see §6.4 |
+| `ff0000` | `a80000` | `6e0000` |
+| `ffffff` | `a8fdfd` | `6ea6a6` |
+| `f34820` | `a0471f` | `692f14` |
+| `0000ff` | `0000fd` | `0000a6` |
 
-`match_direct_zone = true` forces the fallback path on wired (it needs the
-calibrated effect bytes) and makes keys slightly less red but more uniform.
-
----
-
-## 12. Command reference
-
-```bash
-# apply the current theme accent
-omarchy-keyboard-accent apply
-
-# apply and read the table back (adds ~0.3 s now)
-omarchy-keyboard-accent apply --verify
-
-# show what would be applied, without touching the keyboard
-omarchy-keyboard-accent apply --dry-run
-
-# one-off colour (applied exactly with --exact)
-omarchy-keyboard-accent apply --color '#00A0FF' --verify
-
-# one-off colour exactly as written, (white stays white)
-omarchy-keyboard-accent apply --exact --color '#FFFFFF'
-
-# keep a colour across theme changes and reconnects
-omarchy-keyboard-accent apply --pin --color '#FF0000'
-
-# clear the pin (does not apply; run `apply` afterwards)
-omarchy-keyboard-accent unpin
-
-# force a brightness level for this apply (persists it)
-omarchy-keyboard-accent apply --brightness 3
-
-# debounced async apply, as used by the hooks
-omarchy-keyboard-accent-queue
-
-# theme, target, transport, cached state
-omarchy-keyboard-accent status
-
-# also read the live table and inferred brightness
-omarchy-keyboard-accent status --read-table
-
-# dump all 144 live entries
-omarchy-keyboard-accent read
-
-# persist a brightness level
-omarchy-keyboard-accent set-brightness 5
-```
-
-Example outputs:
+Model (`lighting.calibrate`), within about 1 per channel of every measurement:
 
 ```
-$ omarchy-keyboard-accent apply --dry-run
-theme=last-horizon accent=#F34820 (theme_override:last-horizon) target=#F34820 H=11.4 L=0.539 S=0.898 chroma=211
-
-$ omarchy-keyboard-accent status
-theme: last-horizon (~/.local/state/omarchy/current/theme)
-accent: #F34820 (theme_override:last-horizon)
-target: #F34820 H=11.4 L=0.539 S=0.898 chroma=211
-config: saturation_floor=0.55 saturation_gain=0.5 lightness=0.46-0.54 underglow_correction=True match_direct_zone=False wireless_color_order=rgb theme_overrides=34
-device: auto (prefer=auto)
-state: brightness=5 transport=wired path=/dev/input/by-id/usb-SONiX_AULA_F75Max-if03-hidraw effect=83 direct=61 target=#F34820 mode=static+direct
+stored = round(colour x GAIN x BRIGHTNESS[level])
+GAIN       = (0.6575, 0.9911, 0.9885)            R, G, B
+BRIGHTNESS = (0.1805, 0.3750, 0.6598, 0.7848, 1.0)   levels 1-5
 ```
 
+Side by side, raw white from a live frame looks warm and the calibrated white looks
+neutral (**seen**). **The red gain is a correct white balance**, so:
+
+- effects and per-key colours are sent as the intended colour, with no correction;
+- live frames bypass it, so the music visualiser runs every colour through `calibrate()`
+  to look the same as an effect.
+
+### 5.2 Brightness read-back
+
+Over the cable the apply reads page 0 of the table, takes the colour most key slots show
+(at least 80 % must agree), and finds the level at which the last applied colour is stored
+as that value (within 12). This keeps a level set with the keyboard's own keys
+(**read**: set 3, next apply kept 3). If the keys are not uniform (an animated effect),
+or nothing fits, the stored level is used. The dongle has no read-back; it reuses the
+stored level.
+
 ---
 
-## 13. Access, udev and systemd
+## 6. Keymaps and macros
 
-### 13.1 Group and nodes
+### 6.1 Layers (`11` base, `27` Fn; dongle `03`)
 
-- Dedicated group `aula` contains your user (`install.sh` creates it).
-- Rule sets `GROUP="aula"`, `MODE="0660"`, plus `TAG+="uaccess"`.
-- Wired: matches `0c45:800a` **and** `ID_USB_INTERFACE_NUM == "03"`.
-- Dongle: matches `05ac:024f`; the controller then picks the `0xFF60` node
-  from the report descriptor.
-- `remove` events re-trigger the service so the surviving transport gets the
-  theme (e.g. unplugging the cable while on the dongle).
+144 entries of 4 bytes, indexed by LED slot: `[2, 0, usage, 0]` remaps a key, `[6, macro
+slot, 0, 0]` binds a macro, all zero keeps the default. **Writing a layer replaces all of
+it**, so every remap and macro for a layer goes in one command (`f75ctl remap capslock=esc
+f1=a,b,c`). The Fn layer can only be written over the cable.
 
-Deliberately avoided: `MODE="0666"`, broad `hidraw*` matching,
-`RUN+="su …"`, and any long-running helper in udev.
+### 6.2 Macros (`15`; dongle `09`)
 
-### 13.2 Service
-
-```ini
-[Unit]
-Description=Apply Omarchy theme accent to AULA F75 Max
-After=local-fs.target
-ConditionPathExists=~/.local/bin/omarchy-keyboard-accent
-
-[Service]
-Type=oneshot
-User=<you>
-Group=<your group>
-SupplementaryGroups=aula
-Environment=HOME=<your home>
-WorkingDirectory=<your home>
-ExecStart=<your home>/.local/bin/omarchy-keyboard-accent apply
+```
+100 slots of [offset u16, 0, 0]          first macro at offset 400
+per macro: [word count u16, 0*6]         8-byte header
+per event: [0, 0, usage, b0 press | 30 release] [delay ms u16, 00, 50]
+aa 55 at the end; sized to whole 64-byte packets plus one
 ```
 
-The repository ships this as `system/aula-keyboard-accent.service.in`;
-`install.sh` fills in the user, group and home directory. The unit is not
-portable as written because systemd does not expand `~`.
-
-Started by udev via `SYSTEMD_WANTS`, not enabled at boot. Typical run is
-well under a second; `systemctl status aula-keyboard-accent.service` shows the
-last run.
-
-### 13.3 Installer
-
-`install.sh` in the repository root installs the controller and queue script,
-both hooks, the plugin, the udev rule and the systemd unit (user, group and
-home filled in), creates the `aula` group and adds you to it, then reloads
-systemd and udev. Run it as your normal user; it uses `sudo` only for the
-system files. It never overwrites an existing
-`~/.config/omarchy/keyboard-accent/config.toml`, so reinstalling cannot undo
-your overrides or the colour-order fix. Log out and back in once so the group
-applies to the desktop session.
+A step like `ctrl+c` presses its keys in order and releases them in reverse (**seen**:
+`shift+h,i` types "Hi", `ctrl+a` selects all). The macro store seems to be shared by both
+layers, so writing macros for one layer probably replaces those bound on the other
+(**assumed**).
 
 ---
 
-## 14. Verification recipes
+## 7. LCD (cable only)
 
-```bash
-# 1. resolution only
-omarchy-keyboard-accent apply --dry-run
-
-# 2. write and check both zones
-omarchy-keyboard-accent apply --verify
-tail -1 ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log
-
-# 3. live table (expect #f34820 keys, #a0471f underglow at level 5)
-omarchy-keyboard-accent read
-
-# 4. theme change end to end
-omarchy-theme-set kanagawa; sleep 2
-tail -1 ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log
-omarchy-theme-set last-horizon
-
-# 5. brightness preservation
-#    set a level behind the controller's back, then apply and check the log
-#    (see §9.2; a Python one-liner importing the module is enough)
-
-# 6. wireless
-lsusb | grep -i 05ac:024f
-omarchy-keyboard-accent status        # transport should be wireless
-omarchy-keyboard-accent apply
-tail -1 ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log
-# expect transport=wireless, mode=wireless-static, verified=n/a
-```
-
-Wireless has no readback, so the only real check is visual: the accent should
-match the theme. If red and blue are swapped, set
-`lighting.wireless_color_order = "rgb"` (already the case here).
+- Clock: command `28` (§3.2). The accent controller sets it on every wired apply.
+- Image: command `72`, then the image as 4096-byte output reports on interface 2, then
+  `04 02`. The image is a 256-byte header `[frame count, delay per frame in 2 ms units,
+  ff...]` plus 128 x 128 RGB565 little-endian frames, padded with `ff` to whole chunks
+  (**seen**: a 40-frame GIF at 250 ms per frame plays at 250 ms; 321 chunks in 69 s).
+- The vendor app sets neither over the dongle, and neither does this.
 
 ---
 
-## 15. Troubleshooting
+## 8. Dongle protocol
 
-### Keyboard does not change with the theme
+Every message is a 32-byte output report: `[cmd, len, offset, data..., checksum]` with
+byte 31 = sum of bytes 0-30 & `ff`. On Linux it is written as 33 bytes with report ID 0
+first. There is no begin/end framing and no commit packet (**seen**: everything below
+works without the `0F` packet v1 sent first).
 
-1. `omarchy-keyboard-accent status` — is a device listed?
-2. `systemctl status aula-keyboard-accent.service` and
-   `tail ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log`.
-3. Run `omarchy-keyboard-accent apply` manually; the error line explains the
-   failure (permission, no ack, device not found).
-4. Check the hook exists and is executable:
-   `ls -l ~/.config/omarchy/hooks/theme-set.d/`.
+| Cmd | Offset | Data | Status |
+|---|---|---|---|
+| `05` | 0 | the 16-byte effect payload (§4.1), colour as R, G, B | **seen** |
+| `14` | chunk number | the 576-byte colour table in 28-byte chunks; then `05` with mode `80` | **seen** |
+| `03` | key slot | one 4-byte layer entry; to restore a key send `[2, 0, own usage, 0]` | **seen** |
+| `09` | chunk number | the macro blob, trimmed to used bytes plus one spare chunk, `aa 55` at the end | **seen** |
+| `20 01` | | battery query, answered `20 01 00 <percent>` | **read** |
 
-### `device not found`
-
-- Wired: cable must be data-capable; check
-  `ls /dev/input/by-id | grep -i aula`.
-- Dongle: check `lsusb | grep 05ac:024f` and that a `0xFF60` node exists.
-- Both present: `prefer = "auto"` picks wired. Set `prefer = "wireless"` to
-  charge over USB while staying on 2.4 GHz.
-
-### Permission denied
-
-- `id | grep aula`; group changes need a fresh login session for the desktop.
-- The service also sets `SupplementaryGroups=aula`, so hotplug applies work
-  even in a session that predates the group.
-
-### Wireless colour is wrong / swapped
-
-- Red and blue swapped → `wireless_color_order = "rgb"` (current), or `"bgr"`
-  if a firmware update inverts it.
-- Wrong theme entirely → check `accent_source` in `state.json`; a stale
-  override would show `theme_override:<slug>`.
-
-### Wired write works but `verified=False`
-
-- Restore pacing: raise `FEATURE_SETTLE`, `ACK_POLL`, `PAGE_SETTLE` in the
-  controller (the current values are 10/20/25 ms; slower values are more
-  conservative).
-- A single missed ack is already retried up to 3 times (§5.5); check the log
-  for `apply attempt N failed` lines to see how often it happens.
-- Re-test with `apply --verify` a few times.
-
-### Brightness resets after a theme change
-
-- Wired should infer it. If it does not, the effect group may not be uniform
-  (dynamic effect running); inference falls back to the stored level.
-- Wireless cannot infer; use `set-brightness N`.
-
-### New theme has the wrong colour
-
-- Add/remove a line in `[theme_overrides]`. Without a line the automatic
-  choice applies.
-- Check the slug with `ls ~/.local/state/omarchy/current/` after switching, or
-  `basename` of the theme directory.
-
-### Bar widget missing or stuck
-
-- After installing or editing the plugin, run `omarchy restart shell`.
-  Quickshell's hot reload of plugins is unreliable and can leave a plugin
-  silently absent (no dot, no IPC target, nothing in the logs).
-- `omarchy plugin validate` checks the manifest; `omarchy plugin list` shows
-  whether it is enabled.
-- The widget needs `jq`. Run `~/.config/omarchy/plugins/beyond.keyboard-accent/bin/keyboard-accent status`;
-  it prints one line of JSON, with `"ok":false` and an error if something is
-  wrong.
-- It shows on the laptop bar only (`allowMultiple` is false).
-
-### Reinstall wiped something?
-
-- `install.sh` never touches `config.toml`. Config backups from earlier edits
-  are `config.toml.bak.<timestamp>` next to the config.
+Acks for `03` (`[03, 04, slot, status]`) arrive several messages late, so only a non-zero
+status is treated as an error. The last chunk's `len` covers only the used bytes, but all
+28 are sent, like the vendor app.
 
 ---
 
-## 16. Maintenance
+## 9. Music visualiser (`f75ctl music`)
 
-- **Add a theme**: add `slug = "#RRGGBB"` under `[theme_overrides]`; pick the
-  colour from the theme's accent or by hand.
-- **Remove a theme**: delete its line; the automatic choice takes over again.
-- **Retune the look globally**: overrides are pinned, so change them
-  individually; the `[color]` settings only affect `mode="fixed"` and themes
-  without an override.
-- **Firmware update**: re-run `apply --verify`; if it fails, restore the
-  conservative pacing and re-test. Protocol commands are unlikely to change,
-  but pacing and calibration may.
-- **Reinstall the rules**: run the installer; it is idempotent.
-- **Backups**: keep a copy of the controller before editing it, for example
-  under `~/.local/share/omarchy-keyboard-accent/`.
-- **Plugin edits**: run `omarchy restart shell` afterwards (§15).
+15 columns of bars, one per grid column, streamed as live frames at up to 20 fps
+(**seen**: 19.6-20.0 fps).
 
----
-
-## 17. Design decisions and limitations
-
-- **No daemon or polling.** Everything is event-driven: theme hook, login
-  hook, udev add/change/remove. Idle cost is zero.
-- **No vendor software.** Nothing holds the hidraw node between applies.
-- **Two protocols, not one.** The dongle is not the wired keyboard behind a
-  radio; it has its own output-report protocol with no per-key support.
-- **Brightness is preserved, not reset.** Wired infers the live level; wireless
-  reuses the stored one because there is no readback.
-- **Keys before underglow on wired.** The fast path writes keys first; the
-  underglow follows ~0.25 s later. This is the price of not reading the full
-  table before every write.
-- **Overrides are static by design.** They trade automatic adaptation for
-  predictable, vetted colours. New themes need a new line.
-- **Calibration is firmware-specific.** `CHANNEL_GAIN` and
-  `BRIGHTNESS_SCALE` were measured on this unit (2026-10-21) and may differ on
-  other F75 Max revisions.
-- **Near-neutral colours shift in the underglow.** Red attenuation turns warm
-  whites mint-ish and greys cool. Accepted after visual check; keys remain
-  exactly as configured.
-- **The fast path assumes the zone partition is complete** (83 + 61 = 144).
-  If a future firmware exposes a different split, the controller falls back
-  to the read-based order automatically.
-- **Picked colours are always applied exactly.** The widget sends `--exact`;
-  underglow is firmware-calibrated either way and cannot be set exactly.
-- **The widget polls nothing.** It refreshes on load, when the picker opens,
-  after each action, and 2.5 s after the shell's accent changes.
-- **`verified=n/a` on wireless** is expected, not an error.
+- Levels from **cava** when installed (raw 8-bit output, 15 mono bars; only the newest frame
+  is used so it never lags), else a numpy FFT of the system audio via `soundcard`, which
+  reads exactly the audio produced since its last read (reading a fixed amount fell ~20 s
+  behind over 30 s).
+- Backgrounds: solid colours, a hue cycle, or `ambilight`: the screen colour from a 5 %
+  `grim` screenshot in a background thread, weighted toward saturated pixels and eased
+  25 % per frame.
+- Holds the keyboard lock while running; a theme change meanwhile waits up to 15 s, then is
+  deferred, and `music` applies the theme accent when it stops (`--after theme`, default).
 
 ---
 
-## 18. Bar widget
+## 10. The accent controller
 
-Plugin `beyond.keyboard-accent` (`manifest.json`, `KeyboardAccent.qml` and `bin/keyboard-accent` at the repository root). It adds a dot to
-the bar showing the keyboard's current colour and a popup picker.
+### 10.1 Apply
 
-- **Dot**: filled when the keyboard matches the theme accent, ringed when a
-  custom colour is set. Left-click opens the popup; right-click resets to the
-  theme colour.
-- **Popup**: keyboard and theme swatches (click THEME to reset), seven presets
-  drawn in the colour the keys will really show, a hex field with live
-  preview, a **Keep this colour** switch, and Apply / Reset to theme. Nothing
-  is applied until Apply is pressed. Colours chosen here are always sent with
-  `--exact`.
-- **Matching**: keyboard and theme count as matching when their summed
-  per-channel difference is at most 3, because controller rounding can leave a
-  colour a step or two off.
-- **Custom colours** last until the next theme change, when the hook sets the
-  theme colour again, unless **Keep this colour** is on. That pins the colour
-  (status line shows PINNED) until you press Reset to theme or right-click the
-  dot. Applying a colour with the switch off also clears an earlier pin.
-- **Helper** `bin/keyboard-accent` wraps the controller and prints one line of
-  JSON per command: `status` (includes `pinned` and `pin`), `targets [--exact] #HEX...` (dry run,
-  what the keys would show), `preview`, `apply [--exact] [--pin] #HEX`, `reset`
-  (clears the pin). Errors are
-  `{"ok":false,"error":...}`.
-- **IPC**: `omarchy-shell beyond.keyboard-accent toggle` (also `open`, `close`,
-  `refresh`, `reset`).
-- **Enable**: `omarchy plugin enable beyond.keyboard-accent`, then
-  `omarchy restart shell`.
+1. Resolve the colour: `--color` (as written with `--exact`), else a pin, else `fixed`
+   mode, else a `[theme_overrides]` entry (as written), else the theme accent through the
+   automatic choice (§10.2).
+2. Take the keyboard lock (wait up to 15 s; if busy, log `deferred` and stop).
+3. Cable: read page 0 for the brightness (§5.2), send one effect command, set the LCD
+   clock. Dongle: one `05` message with the stored brightness.
+4. Save state and log one line.
 
----
+About 0.57 s over the cable including the clock, 0.1 s over the dongle (**read**).
+`--verify` reads the table and checks the keys against `calibrate(target, level)` within 18.
 
-## 19. Experiments that were not adopted
+### 10.2 Automatic colour choice
 
-Animated theme changes were tried on the wired keyboard on 2026-10-22 and
-rejected. Recorded here so they are not repeated.
+Saturated accents (saturation >= 0.80) are kept; muted ones keep their hue with saturation
+`saturation_floor + saturation_gain x s` (at most 0.95); grey and pale accents become a
+soft white that keeps their hue (warm if none); lightness is held in
+`min_lightness`-`max_lightness`. Nothing compensates for the LEDs (§5.1).
 
-**Cross-fade with `set_static`.** Stepping the static colour from the old accent
-to the new one works, but is never smooth:
+### 10.3 Files
 
-- Every step needs the full sequence (`04 18`, `04 13`, data packet, `04 02`
-  with acks). Streaming bare data packets fails the commit ack.
-- With the controller's timing (10 ms before reports, 20 ms before ack polls)
-  a step takes about 0.1 s, roughly 10 steps per second. This is the fastest
-  rate at which the keyboard visibly shows each step. A 1 s fade shows clear
-  steps; a 2 s fade is better but slow.
-- Shorter waits are accepted by the keyboard (a readback after each step showed
-  the right colour at 5/10, 3/5 and 2/3 ms) but nothing is displayed in
-  between: the colours jump. The keyboard appears to redraw about 10 times per
-  second and merges faster updates.
-- At 1/2 ms and below the USB transfers time out (`errno 110`). Polling for an
-  ack before sleeping also times out, so the sleep before the first poll is
-  required. The keyboard recovered every time.
-- A front-loaded easing curve did not hide the steps.
-
-**Per-key wave.** The direct per-key frame is accepted and reads back
-correctly, but is not visible while the static effect is active. A wave built
-from per-key frames showed nothing. There may be a separate per-key mode, but
-it is not documented for this keyboard and was not searched for further.
-
-**Firmware effect modes.** The first byte of the data packet sent by
-`set_static` is the mode; the controller only uses `1` (static). Observed on
-the wired keyboard at speed 3, direction 0, in the theme colour:
-
-| Mode | Behaviour |
+| Path | Content |
 |---|---|
-| 0 | unclear (lights dismissed oddly) |
-| 1 | static, all on |
-| 2 | reactive: a pressed key lights up, then fades |
-| 3 | reverse of 2: a pressed key turns off, then fades back |
-| 7 | pulses |
-| 9 | wave from the centre outwards |
-| 11 | sweep right to left |
-| 12 | circular |
-| 15 | wave outwards from the pressed key |
-
-Modes 4 to 6, 8, 10, 13, 14 and above 15 were not described. The modes are
-animations in their own right: switching to one replaces the old colour, so
-neither a wave (9) nor a pulse (7) gives a transition from the old accent to the
-new one. Each landing back on static was also a cut. Reactive modes (2, 15)
-could be an opt-in extra in the theme colour, but are not implemented.
-
-**Decision.** No animation is built into the controller. The keyboard's update
-rate caps smoothness, and a fade would hold the device for 1 to 2 s on every
-theme change.
+| `~/.config/omarchy/keyboard-accent/config.toml` | config (`config.example.toml` documents every key); never overwritten by install |
+| `~/.local/state/omarchy/keyboard-accent/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
+| `.../pin.json` | pinned colour, if any |
+| `.../keyboard-accent.log` | one line per apply |
+| `$XDG_RUNTIME_DIR/aula-f75.lock` | the keyboard lock |
 
 ---
 
-## Appendix A — state file
+## 11. Commands
 
-`~/.local/state/omarchy/keyboard-accent/state.json` (table cache shortened):
+```bash
+omarchy-keyboard-accent apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
+omarchy-keyboard-accent unpin | status [--read-table] | read | set-brightness N
 
-```json
-{
-  "version": 1,
-  "theme": "last-horizon",
-  "accent": "#F34820",
-  "accent_source": "theme_override:last-horizon",
-  "target": "#F34820",
-  "target_rgb": [243, 72, 32],
-  "brightness": 5,
-  "effect_indices": [83 entries],
-  "direct_indices": [61 entries],
-  "match_direct_zone": false,
-  "mode": "static+direct",
-  "updated_at": "2026-10-22T11:31:42+02:00",
-  "transport": "wired",
-  "device_path": "/dev/input/by-id/usb-SONiX_AULA_F75Max-if03-hidraw",
-  "table_cache": "<base64 of the 576-byte frame, 768 chars>"
-}
+f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
+f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
+f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c [--fn-layer] | macro ... | reset-keymap [--fn-layer]
+f75ctl clock | gif FILE | battery | keys
+f75ctl music [--source auto|cava|builtin] [--color ...] [--background ...|ambilight] [--test]
+f75ctl --dry-run ...       print cable packets, send nothing
+f75ctl --dongle ...        use the dongle when the cable is also plugged in
 ```
 
-- `effect_indices` / `direct_indices` are learned once; if both are missing
-  the controller bootstraps them by probing brightness 1 and 5.
-- `table_cache` exists only for the wired fast path and is validated on load
-  (base64, exactly 576 bytes). A bad cache is ignored, not fatal.
+`gif` and the ambilight background need pillow; the built-in analyser needs numpy and
+soundcard. Everything else needs only Python 3.11+.
 
-## Appendix B — log format
+---
 
+## 12. Install, access and verification
+
+`install.sh` copies `aula_f75/` and `accent/` to `~/.local/share/omarchy-keyboard-accent/`,
+the commands to `~/.local/bin`, the hooks and the widget; with sudo it adds the `aula`
+group, the udev rule (cable interfaces 2 and 3, dongle interface 3) and the one-shot unit.
+`uninstall.sh` removes all of it (`--purge` also config and state).
+
+Checks:
+
+```bash
+python3 -m unittest discover tests          # packets, calibration, colour choice
+omarchy-keyboard-accent apply --verify      # cable: keys match the expected stored colour
+f75ctl --dry-run light static -c 00ff00     # see the packets
+f75ctl music --test --seconds 5             # bars must move the whole time
 ```
-2026-10-22 11:30:34 theme=last-horizon accent=#F34820 target=#F34820 H=11.4 L=0.539 S=0.898 chroma=211 brightness=5 transport=wired effect=83 direct=61 direct_rgb=#F34820 bootstrapped=False verified=True result=ok
-```
 
-- `transport` is `wired` or `wireless`.
-- `verified` is `True`, `False`, `skipped` (no `--verify`), or `n/a` (dongle,
-  no readback).
-- Failures are logged as `apply failed: <reason>` with no result line.
-- Wireless lines use `path=<hidraw>` and `mode=wireless-static` instead of
-  the zone counts.
+---
+
+## 13. Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| nothing happens on theme change | `tail ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log`; `result=deferred` means another program held the keyboard |
+| `keyboard not found` | `lsusb | grep -iE '0c45:800a|05ac:024f'`; the cable must carry data |
+| permission denied | `id | grep aula` (log in again after install); `ls -l /dev/hidraw*` |
+| `keyboard rejected 04 ..` | close any other program using the keyboard (the vendor app on Windows polls constantly) |
+| music bars freeze | the live-frame pause (§3.4) may need raising on other hardware |
+| colour differs cable vs dongle | both should match; report it, since the dongle colour order was only checked on one unit |
+| wrong colour for a new theme | add a line under `[theme_overrides]` |
+
+---
+
+## 14. Corrections to v1
+
+v1 (2026-10-21/22) was built on a wrong model of the LED table. Corrected in v2:
+
+| v1 said | Actually |
+|---|---|
+| 83 "effect/underglow" slots + 61 "direct/key" slots | the 80 keys are among the 83; the 61 are empty; there is no separate underglow (§2.3) |
+| keys show the colour exactly, the underglow is calibrated | keys are calibrated, and the calibration is a correct white balance (§5.1) |
+| `underglow_correction` lowers green and blue | it shifted the keys; removed |
+| the direct per-key frame paints the keys | it wrote to empty slots; as a live frame it only shows while streamed (§4.3) |
+| "per-key wave not visible" | same cause: written to empty slots, and not streamed |
+| dongle: static colour only, no per-key | per-key colours, remaps and macros work (§8) |
+| dongle needs a `0F` commit first | not needed |
+| apply = page-0 read + direct frame + static + cache | page-0 read + one effect command |
+
+v1's experiments with cross-fades between theme colours (about 10 steps per second before
+the keyboard merges updates) still stand as an observation about effect commands; they
+were not repeated.

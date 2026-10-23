@@ -19,7 +19,9 @@ done
 run() { if $dry; then echo "+ $*"; else "$@"; fi; }
 root() { if $dry; then echo "+ sudo $*"; else sudo "$@"; fi; }
 
-run rm -f "$HOME/.local/bin/omarchy-keyboard-accent" "$HOME/.local/bin/omarchy-keyboard-accent-queue"
+run rm -f "$HOME/.local/bin/omarchy-keyboard-accent" "$HOME/.local/bin/omarchy-keyboard-accent-queue" \
+          "$HOME/.local/bin/f75ctl"
+run rm -rf "$HOME/.local/share/omarchy-keyboard-accent"
 run rm -f "$HOME/.config/omarchy/hooks/theme-set.d/keyboard-accent.sh" \
           "$HOME/.config/omarchy/hooks/post-boot.d/keyboard-accent.sh"
 # Let Omarchy drop the widget from the bar layout, then clean up the folder.
