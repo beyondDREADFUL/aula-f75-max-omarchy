@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import datetime
 
 from aula_f75 import lighting
-from aula_f75.device import Busy, NotFound, Rejected, open_keyboard
+from aula_f75.device import Busy, NotFound, Rejected, open_keyboard, present
 from aula_f75.layout import KEY_SLOTS
 from aula_f75.lcd import clock_payload
 
@@ -70,13 +70,36 @@ def verify(kb, target, brightness) -> bool:
     return stored is not None and sum(abs(a - b) for a, b in zip(stored, expected)) <= VERIFY_TOLERANCE
 
 
+PALETTE_KEYS = ("accent", "red", "yellow", "green", "cyan", "blue", "magenta")
+
+
 def load_config() -> dict:
-    """The config with the widget's effect choice applied."""
+    """The config with the widget's effect and speed applied."""
     config = cfg.load_config()
-    config["effect_source"] = "config"
-    if effect := cfg.effect_override():
-        config["effect"], config["effect_source"] = effect, "widget"
+    chosen = cfg.effect_override()
+    config["effect_source"] = "widget" if "effect" in chosen else "config"
+    config.update(chosen)
     return config
+
+
+def theme_palette(config: dict, colors: dict, first=None) -> list[tuple[str, str]]:
+    """[(theme colour, LED colour)] for the theme's accent and named colours, each through
+    the automatic choice, without repeating a theme or LED colour. `first` (the theme's actual
+    target, which a [theme_overrides] entry can set) replaces the accent's entry."""
+    seen, out = set(), []
+    if first:
+        seen.update(first)
+        out.append(first)
+    for key in PALETTE_KEYS[1:] if first else PALETTE_KEYS:
+        try:
+            source = parse_color(colors[key])
+        except (KeyError, ValueError):
+            continue
+        source, target = hexstr(source), hexstr(vivid(source, config))
+        if source not in seen and target not in seen:
+            seen.update((source, target))
+            out.append((source, target))
+    return out
 
 
 def cmd_apply(args) -> int:
@@ -146,13 +169,23 @@ def cmd_set_effect(args) -> int:
     if args.effect == "default":
         cfg.save_effect(None)
     elif args.effect in lighting.MODES and args.effect not in cfg.NO_COLOR_EFFECTS:
-        cfg.save_effect(args.effect)
+        cfg.save_effect(args.effect, args.speed)
     else:
         print(f"unknown effect {args.effect!r}", file=sys.stderr)
         return 2
     args.color, args.exact, args.pin, args.dry_run, args.verify, args.theme, args.brightness = (
         None, False, False, False, False, None, None)
     return cmd_apply(args)
+
+
+def cmd_palette(args) -> int:
+    import tomllib
+    colors = tomllib.loads((cfg.THEME_DIR / "colors.toml").read_text(encoding="utf-8"))
+    config = cfg.load_config()
+    target, accent, _ = resolve_target(config)
+    for source, target in theme_palette(config, colors, (hexstr(accent), hexstr(target))):
+        print(source, target)
+    return 0
 
 
 def cmd_unpin(args) -> int:
@@ -193,8 +226,9 @@ def cmd_status(args) -> int:
     print(f"accent: {hexstr(accent)} ({source})")
     print(f"target: {hexstr(target)} {describe(target)}")
     print(f"effect: {config['effect']} ({config['effect_source']})")
-    print(f"config: speed={config['speed']} "
-          f"direction={config['direction']} prefer={config['device_prefer']} "
+    print(f"speed: {config['speed']}")
+    print(f"devices: {','.join(sorted(present())) or 'none'}")
+    print(f"config: direction={config['direction']} prefer={config['device_prefer']} "
           f"lcd_clock={config['lcd_clock']} theme_overrides={len(config['theme_overrides'])}")
     print(f"state: brightness={state.get('brightness', '?')} transport={state.get('transport', '?')} "
           f"target={state.get('target', '?')} effect={state.get('effect', '?')}")
@@ -223,7 +257,10 @@ def build_parser() -> argparse.ArgumentParser:
                        "(\"default\" returns to the config's effect)")
     e.add_argument("effect", choices=["default", *[m for m in lighting.MODES
                                                    if m not in cfg.NO_COLOR_EFFECTS]])
+    e.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     e.set_defaults(func=cmd_set_effect)
+    sub.add_parser("palette", help="the theme's colours as the keys would show them").set_defaults(
+        func=cmd_palette)
     sub.add_parser("unpin", help="clear the pinned colour (does not apply)").set_defaults(
         func=cmd_unpin)
     sub.add_parser("read", help="dump the live LED table (wired)").set_defaults(func=cmd_read)

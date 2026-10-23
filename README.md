@@ -66,7 +66,7 @@ omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the t
 
 Set `effect = "breath"` (or any of the 19 effects) under `[lighting]` in the config to show the accent as an animation instead of a static colour.
 
-The widget: left-click opens the picker, right-click resets to the theme. "Keep this colour" pins a colour through theme changes; the effect buttons and the music switch apply at once. `omarchy-shell beyond.keyboard-accent toggle` opens it from a keybinding.
+The widget (a white keyboard icon in the bar): left-click opens it, right-click returns to the theme colour. It sets the colour (theme colours, bright presets or hex), brightness, effect and speed, and the music visualiser; every choice applies at once. Keybindings: `omarchy-shell beyond.keyboard-accent toggle|brighter|dimmer|music|reset`. See [docs/WIDGET.md](docs/WIDGET.md).
 
 ```bash
 f75ctl light breath -c 00ffff                 # any effect, colour, -b brightness, -s speed

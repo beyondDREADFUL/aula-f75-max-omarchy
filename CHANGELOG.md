@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-23 (v2, widget redesign)
+- The widget is rebuilt from Omarchy's own components and is shorter. Every choice applies
+  at once (only the hex field waits for Apply). New: colours from the active theme next to
+  the bright presets, brightness 1-5, effect speed, the connection and the 2.4G battery
+  level in the header. Effects fold out inside the panel instead of a popup that the
+  panel's edge cut off. Music is disabled with a note when only the dongle is connected.
+- The bar shows a fixed white keyboard icon instead of a coloured dot; the tooltip carries
+  the state.
+- New keybinding targets: `brighter`, `dimmer`, `brightness N`.
+- New controller commands: `palette`, `set-effect NAME --speed N`; `status` reports the
+  speed and the connected transports.
+
 ## 2026-10-23 (v2, widget)
 - The widget can switch the effect the accent is shown as, and start and stop the music
   visualiser (dark or the theme colour behind the bars). New `omarchy-keyboard-accent

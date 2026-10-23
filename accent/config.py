@@ -137,19 +137,31 @@ def clear_pin() -> None:
     PIN_FILE.unlink(missing_ok=True)
 
 
-def effect_override() -> str | None:
-    """The effect chosen in the widget, which takes precedence over [lighting] effect."""
+def effect_override() -> dict:
+    """The effect and speed chosen in the widget, which take precedence over [lighting]:
+    {"effect": name, "speed": 0-5}, either key missing when not chosen."""
     data = _read_json(EFFECT_FILE)
-    name = data.get("effect") if isinstance(data, dict) else None
-    return name if name in MODES and name not in NO_COLOR_EFFECTS else None
+    if not isinstance(data, dict):
+        return {}
+    chosen = {}
+    if data.get("effect") in MODES and data["effect"] not in NO_COLOR_EFFECTS:
+        chosen["effect"] = data["effect"]
+    if isinstance(data.get("speed"), int) and 0 <= data["speed"] <= 5:
+        chosen["speed"] = data["speed"]
+    return chosen
 
 
-def save_effect(name: str | None) -> None:
-    """Store the widget's effect, or None to go back to the config."""
+def save_effect(name: str | None, speed: int | None = None) -> None:
+    """Store the widget's effect (and speed), or None to go back to the config."""
     if name is None:
         EFFECT_FILE.unlink(missing_ok=True)
-    else:
-        _write_json(EFFECT_FILE, {"effect": name})
+        return
+    data = {"effect": name}
+    if speed is not None:
+        data["speed"] = min(max(int(speed), 0), 5)
+    elif "speed" in (old := effect_override()):
+        data["speed"] = old["speed"]           # changing the effect keeps the chosen speed
+    _write_json(EFFECT_FILE, data)
 
 
 def theme_slug() -> str | None:

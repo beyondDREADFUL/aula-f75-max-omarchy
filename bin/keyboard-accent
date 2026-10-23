@@ -2,12 +2,16 @@
 # Helper for the Keyboard Accent bar widget. Wraps omarchy-keyboard-accent.
 # Every command prints one line of JSON, so the widget needs no exit codes.
 #
-#   status                              theme, keyboard colour, match, pin
+#   status                              theme, keyboard colour, match, pin, effect, speed,
+#                                       brightness, connected transports, music
+#   palette                             the theme's colours and what the keys would show
 #   targets [--exact] #HEX...           colour the keys would show for each, no writes
 #   preview [--exact] #HEX              same for a single colour
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
-#   effect  NAME|default                show the accent as this effect (default: config's)
+#   effect  NAME|default [SPEED]        show the accent as this effect (default: config's)
+#   brightness N                        brightness 1-5
+#   battery                             battery percent (2.4 GHz dongle only)
 #   music   start [off|theme]           start the music visualiser (USB cable only);
 #                                       theme puts the theme colour, dimmed, behind the bars
 #   music   stop                        stop it; the keyboard returns to the theme colour
@@ -82,6 +86,8 @@ status)
     status=$("$CONTROLLER" status 2>/dev/null)
     theme=$(awk '/^target:/ {print $2}' <<<"$status")
     effect=$(awk '/^effect:/ {print $2}' <<<"$status")
+    speed=$(awk '/^speed:/ {print $2}' <<<"$status")
+    devices=$(awk '/^devices:/ {print $2}' <<<"$status")
     music=false
     music_pid >/dev/null && music=true
     [ -n "$theme" ] || fail "could not read the theme colour"
@@ -98,7 +104,8 @@ status)
     pinned=$(jq -r '.color // empty' "$PIN" 2>/dev/null)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
         --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
-        --arg effect "${effect:-static}" --argjson music "$music" '{
+        --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
+        --arg devices "${devices:-none}" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -109,6 +116,8 @@ status)
         brightness: $brightness,
         transport: $transport,
         effect: $effect,
+        speed: $speed,
+        devices: ($devices | split(",") | map(select(. != "none"))),
         music: $music
     }'
     ;;
@@ -142,10 +151,32 @@ reset)
     jq -nc '{ok: true}'
     ;;
 
+palette)
+    "$CONTROLLER" palette 2>/dev/null \
+        | jq -R -nc '{ok: true, colors: [inputs | split(" ") | {source: .[0], target: .[1]}]}' \
+        || fail "could not read the theme colours"
+    ;;
+
 effect)
     [ -n "${1:-}" ] || fail "no effect given"
-    "$CONTROLLER" set-effect "$1" >/dev/null 2>&1 || fail "could not set effect $1"
+    speed_args=()
+    [ -n "${2:-}" ] && speed_args=(--speed "$2")
+    "$CONTROLLER" set-effect "$1" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
+        || fail "could not set effect $1"
     jq -nc '{ok: true}'
+    ;;
+
+brightness)
+    [[ ${1:-} =~ ^[1-5]$ ]] || fail "brightness must be 1-5"
+    "$CONTROLLER" set-brightness "$1" >/dev/null 2>&1 || fail "could not set brightness"
+    jq -nc '{ok: true}'
+    ;;
+
+battery)
+    devices=$("$CONTROLLER" status 2>/dev/null | awk '/^devices:/ {print $2}')
+    [ "$devices" = "wireless" ] || fail "battery is only reported over the 2.4 GHz dongle"
+    percent=$("$F75CTL" battery 2>/dev/null | grep -oE '[0-9]+') || fail "no battery reading"
+    jq -nc --argjson percent "$percent" '{ok: true, percent: $percent}'
     ;;
 
 music)
@@ -192,7 +223,7 @@ music)
     ;;
 
 *)
-    echo "usage: keyboard-accent status|targets|preview|apply|reset|effect|music" >&2
+    echo "usage: keyboard-accent status|palette|targets|preview|apply|reset|effect|brightness|battery|music" >&2
     exit 2
     ;;
 esac
