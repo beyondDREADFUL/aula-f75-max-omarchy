@@ -344,17 +344,22 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
 - Levels from **cava** (raw 8-bit output, 15 mono bars; only the newest frame is used so it
   never lags). cava is required for music; without it `music` stops with "music needs
   cava".
-- Backgrounds: a named or hex colour at a chosen brightness (the widget uses the theme
-  colour at 30 %), or a hue cycle.
+- Backgrounds: a named or hex colour at a chosen brightness, a hue cycle, or `theme`: the
+  colour the accent controller would set now (theme, `[theme_overrides]` or pin) at full
+  brightness, which the widget uses. `theme` is read at start and again on SIGHUP.
 - Cost (**read**, 15 s each, one core = 100 %): cava with any background about 4 %, 32 MiB;
   the test pattern 3 %. Two alternatives were tried and removed: a built-in numpy FFT via
   `soundcard` (about 8 %, `soundcard` is not packaged for Arch, and it once fell ~20 s
   behind by reading a fixed amount of audio per frame), and an "ambilight" background
   (screen colour via `grim`: 44-74 %, and an ordinary desktop averaged to near grey,
   which showed as white).
-- Holds the keyboard lock while running; a theme change meanwhile waits up to 15 s, then is
-  deferred, and `music` applies the theme accent when it stops (`--after theme`, default).
-- Ctrl+C and SIGTERM only set a flag that the loop checks between frames. Stopping inside a
+- Holds the keyboard lock while running. When `music.background` says `theme`, `apply` (from
+  a theme change, a pin or a reset) sends SIGHUP to the pid in `music.pid` and returns at
+  once (logged `result=music background`); the bars' background changes on the next frame
+  (**seen**). Otherwise a theme change waits up to 15 s, then is deferred. Either way
+  `music` applies the theme accent when it stops (`--after theme`, default).
+- Ctrl+C, SIGTERM and SIGHUP only set a flag that the loop checks between frames; the
+  handlers are set before cava starts, so an early SIGHUP doesn't end the process. Stopping inside a
   frame left the keyboard waiting for the rest of it, and it then rejected the theme apply
   (`04 18` answered `00 ff`) until it timed out by itself (**read**, **seen**).
 
@@ -392,7 +397,7 @@ soft white that keeps their hue (warm if none); lightness is held in
 | `~/.local/state/omarchy/keyboard-accent/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
 | `.../pin.json` | pinned colour, if any |
 | `.../effect.json` | effect and speed chosen in the widget (override `[lighting]`) |
-| `.../music.pid`, `music.log` | the visualiser started from the widget |
+| `.../music.pid`, `music.log`, `music.background` | the visualiser started from the widget, and its background (`off` or `theme`) |
 | `.../keyboard-accent.log` | one line per apply |
 | `$XDG_RUNTIME_DIR/aula-f75.lock` | the keyboard lock |
 
@@ -411,7 +416,7 @@ f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
 f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c [--fn-layer] | macro ... | reset-keymap [--fn-layer]
 f75ctl clock | gif FILE | battery | keys
-f75ctl music [--color ...] [--background NAME|RRGGBB] [--test]
+f75ctl music [--color ...] [--background NAME|RRGGBB|theme] [--test]
 f75ctl --dry-run ...       print cable packets, send nothing
 f75ctl --dongle ...        use the dongle when the cable is also plugged in
 ```

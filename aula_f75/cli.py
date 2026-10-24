@@ -40,12 +40,12 @@ def rgb(text: str):
 
 
 def _background(text: str) -> str:
-    if text in music.BACKGROUNDS:
+    if text in music.BACKGROUNDS or text == "theme":
         return text
     hexpart = text.lstrip("#").lower()
     if len(hexpart) != 6 or any(c not in "0123456789abcdef" for c in hexpart):
         raise argparse.ArgumentTypeError(
-            f"{text!r}: use off, spectrum-cycle, a colour name or RRGGBB")
+            f"{text!r}: use off, spectrum-cycle, theme, a colour name or RRGGBB")
     return hexpart
 
 
@@ -82,7 +82,24 @@ def cmd_music(kb, a):
         raise Unsupported("music needs the USB cable (live frames don't go over 2.4G)")
     opts = music.Options(a.fps, a.color, a.background, a.background_brightness, a.amplitude,
                          a.seconds, a.test)
-    fps, stopped_by = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"))
+    reload = None
+    if a.background == "theme":
+        # the accent controller's colour (theme, override or pin); SIGHUP reads it again,
+        # which the controller sends when the theme changes while music holds the keyboard
+        from accent.controller import current_target
+
+        def reload(opts):
+            try:
+                opts.background = current_target().lstrip("#").lower()
+            except (ValueError, OSError, RuntimeError) as exc:
+                if opts.background == "theme":
+                    raise music.MusicError(f"could not read the theme colour: {exc}") from exc
+                print(f"music: kept the background ({exc})", flush=True)
+                return
+            print(f"music: background #{opts.background}", flush=True)
+        reload(opts)
+    fps, stopped_by = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"),
+                                reload=reload)
     print(f"{fps:.1f} fps", flush=True)
     kb.close()
     if stopped_by == signal.SIGUSR1:
@@ -164,7 +181,8 @@ def build_parser():
     s.add_argument("--color", choices=music.BAR_COLORS, default="rainbow", help="bar colours")
     s.add_argument("--amplitude", type=int, default=3, choices=range(1, 6), help="sensitivity")
     s.add_argument("--background", type=_background, default="off",
-                   help="off, spectrum-cycle, a colour name or RRGGBB")
+                   help="off, spectrum-cycle, a colour name, RRGGBB, or theme (the accent "
+                        "controller's colour, followed on SIGHUP)")
     s.add_argument("--background-brightness", type=int, default=100, metavar="PERCENT")
     s.add_argument("--after", choices=["theme", *lighting.MODES], default="theme",
                    help="what to show when done (default: the theme accent)")

@@ -138,8 +138,9 @@ def cava_levels(opts: Options):
     return levels(), close
 
 
-def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
+def run(kb, opts: Options, on_start=print, reload=None) -> tuple[float, int | None]:
     """Stream bars to kb until opts.seconds pass or SIGINT, SIGTERM or SIGUSR1 arrives.
+    SIGHUP calls reload(opts) between frames, which may change opts (e.g. the background).
     Returns (frames per second, the signal that stopped it or None)."""
     interval = 1 / opts.fps
     t_start, frames = time.time(), 0
@@ -151,26 +152,33 @@ def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
         kb.frame({slot: calibrate(rgb) for slot, rgb in colors.items()})
         frames += 1
 
-    if opts.test:
-        name, close = "test pattern", (lambda: None)
-
-        def pattern():
-            while True:
-                t = time.time() - t_start
-                yield [(math.sin(t * 3 + c * 0.5) + 1) / 2 for c in range(COLS)]
-        levels = pattern()
-    else:
-        name = "cava"
-        levels, close = cava_levels(opts)
-    # Ctrl+C and SIGTERM only set a flag: stopping inside a frame leaves the keyboard
-    # waiting for the rest of it, and it then rejects the next command
-    stop = []
+    # Ctrl+C, SIGTERM and SIGHUP only set a flag: stopping or changing inside a frame
+    # leaves the keyboard waiting for the rest of it, and it then rejects the next command.
+    # Installed before cava starts, so an early SIGHUP doesn't end the process.
+    stop, hup = [], []
     previous = {sig: signal.signal(sig, lambda signum, _: stop.append(signum))
                 for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGUSR1)}
-    on_start(f"{name}; Ctrl+C to stop")
+    previous[signal.SIGHUP] = signal.signal(signal.SIGHUP, lambda *_: hup.append(1))
+    close = lambda: None  # noqa: E731
     try:
+        if opts.test:
+            name = "test pattern"
+
+            def pattern():
+                while True:
+                    t = time.time() - t_start
+                    yield [(math.sin(t * 3 + c * 0.5) + 1) / 2 for c in range(COLS)]
+            levels = pattern()
+        else:
+            name = "cava"
+            levels, close = cava_levels(opts)
+        on_start(f"{name}; Ctrl+C to stop")
         while not stop and (opts.seconds is None or time.time() - t_start < opts.seconds):
             loop_start = time.time()
+            if hup:
+                hup.clear()
+                if reload:
+                    reload(opts)
             draw(next(levels))
             # cava can deliver buffered frames at once; don't exceed fps
             time.sleep(max(0, interval - (time.time() - loop_start)))

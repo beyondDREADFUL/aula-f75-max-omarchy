@@ -31,8 +31,9 @@ Reset to theme, releases it.
 The effect and speed chosen here are remembered over the config's `[lighting]`
 (`omarchy-keyboard-accent set-effect NAME --speed N`). Music runs `f75ctl music` in
 the background; switching the background restarts it, and switching it off returns
-the keyboard to the theme colour. A theme change while music runs is applied when it
-stops.
+the keyboard to the theme colour. With the theme-colour background, a theme change
+moves the background to the new colour at once; the keys take the theme colour when
+music stops.
 
 ## Keybindings
 

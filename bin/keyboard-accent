@@ -15,7 +15,7 @@
 #   transition none|fade|wave|explode   how the keys change colour over the cable
 #   battery                             battery percent (2.4 GHz dongle only)
 #   music   start [off|theme]           start the music visualiser (USB cable only);
-#                                       theme puts the theme colour, dimmed, behind the bars
+#                                       theme puts the theme colour behind the bars
 #   music   stop                        stop it; the keyboard returns to the theme colour
 #
 # --exact uses the colour as written. Without it the controller applies the
@@ -197,11 +197,9 @@ music)
     start)
         case "${2:-off}" in
         off) background=(--background off) ;;
-        theme)
-            theme=$("$CONTROLLER" status 2>/dev/null | awk '/^target:/ {print $2}')
-            valid_hex "$theme" || fail "could not read the theme colour"
-            background=(--background "${theme#\#}" --background-brightness 30)
-            ;;
+        # theme: f75ctl reads the colour itself and again on SIGHUP, which the controller
+        # sends on a theme change, so the background follows the theme
+        theme) background=(--background theme) ;;
         *) fail "unknown background ${2}" ;;
         esac
         if pid=$(music_pid) && [ "$(cat "$MUSIC_BG" 2>/dev/null)" != "${2:-off}" ]; then

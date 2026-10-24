@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-24 (v2, music follows the theme)
+- With the widget's theme-colour background, a theme change while music runs moves the
+  background to the new theme colour within a frame, instead of waiting for music to stop.
+  `apply` sends the visualiser SIGHUP and returns at once (no 15 s wait for the lock); the
+  visualiser reloads the colour between frames. New `f75ctl music --background theme`.
+- The theme-colour background is no longer dimmed to 30 %; it shows at full brightness.
+
 ## 2026-10-24 (v2, Fn-key changes investigated)
 - Documented what the keyboard reveals about changes made with its own Fn keys
   (docs/HANDBOOK.md §5.3): no report on any cable or dongle interface; over the cable the

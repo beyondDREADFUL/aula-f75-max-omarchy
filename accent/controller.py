@@ -7,9 +7,12 @@ LCD clock. The dongle has no read-back, so it reuses the stored brightness.
 from __future__ import annotations
 
 import argparse
+import os
+import signal
 import sys
 from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
 from aula_f75 import lighting, transition
 from aula_f75.device import Busy, NotFound, Rejected, open_keyboard, present
@@ -43,6 +46,26 @@ def resolve_target(config: dict, color: str | None = None, exact: bool = False):
         except ValueError as exc:
             cfg.log(f"invalid theme override for {slug}: {exc}")
     return vivid(accent, config), accent, key
+
+
+def current_target() -> str:
+    """#RRGGBB the keys would show for the theme now (a pin and overrides included)."""
+    config = load_config()
+    color, exact = None, False
+    if pin := cfg.load_pin():
+        color, exact = pin["color"], pin["exact"]
+    return hexstr(resolve_target(config, color, exact)[0])
+
+
+def music_following_theme() -> int | None:
+    """The pid of the widget's music visualiser if it shows the theme colour behind the bars."""
+    try:
+        pid = int((cfg.STATE_DIR / "music.pid").read_text())
+        background = (cfg.STATE_DIR / "music.background").read_text().strip()
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except (OSError, ValueError):
+        return None
+    return pid if background == "theme" and b"f75ctl" in cmdline else None
 
 
 def _dominant(entries, slots):
@@ -122,6 +145,15 @@ def cmd_apply(args) -> int:
     if args.dry_run:
         print(summary)
         return 0
+    if (not args.color or args.pin) and (pid := music_following_theme()):
+        # music holds the keyboard: have it reload the background colour between frames,
+        # instead of waiting 15 s for the lock; it applies the theme itself when it stops
+        try:
+            os.kill(pid, signal.SIGHUP)
+            cfg.log(f"{summary} result=music background")
+            return 0
+        except OSError:
+            pass
     try:
         kb = open_keyboard(config["device_prefer"])
     except NotFound as exc:
