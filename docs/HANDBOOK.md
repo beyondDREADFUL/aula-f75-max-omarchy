@@ -287,16 +287,17 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
 15 columns of bars, one per grid column, streamed as live frames at up to 20 fps
 (**seen**: 19.6-20.0 fps).
 
-- Levels from **cava** when installed (raw 8-bit output, 15 mono bars; only the newest frame
-  is used so it never lags), else a numpy FFT of the system audio via `soundcard`, which
-  reads exactly the audio produced since its last read (reading a fixed amount fell ~20 s
-  behind over 30 s).
+- Levels from **cava** (raw 8-bit output, 15 mono bars; only the newest frame is used so it
+  never lags). cava is required for music; without it `music` stops with "music needs
+  cava".
 - Backgrounds: a named or hex colour at a chosen brightness (the widget uses the theme
   colour at 30 %), or a hue cycle.
 - Cost (**read**, 15 s each, one core = 100 %): cava with any background about 4 %, 32 MiB;
-  the built-in FFT about 8 %, 41 MiB; the test pattern 3 %. An "ambilight" background
-  (screen colour via `grim`) was tried and removed: 44-74 %, and an ordinary desktop
-  averaged to near grey, which showed as white.
+  the test pattern 3 %. Two alternatives were tried and removed: a built-in numpy FFT via
+  `soundcard` (about 8 %, `soundcard` is not packaged for Arch, and it once fell ~20 s
+  behind by reading a fixed amount of audio per frame), and an "ambilight" background
+  (screen colour via `grim`: 44-74 %, and an ordinary desktop averaged to near grey,
+  which showed as white).
 - Holds the keyboard lock while running; a theme change meanwhile waits up to 15 s, then is
   deferred, and `music` applies the theme accent when it stops (`--after theme`, default).
 - Ctrl+C and SIGTERM only set a flag that the loop checks between frames. Stopping inside a
@@ -353,13 +354,14 @@ f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
 f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c [--fn-layer] | macro ... | reset-keymap [--fn-layer]
 f75ctl clock | gif FILE | battery | keys
-f75ctl music [--source auto|cava|builtin] [--color ...] [--background NAME|RRGGBB] [--test]
+f75ctl music [--color ...] [--background NAME|RRGGBB] [--test]
 f75ctl --dry-run ...       print cable packets, send nothing
 f75ctl --dongle ...        use the dongle when the cable is also plugged in
 ```
 
-`gif` needs pillow; the built-in analyser needs numpy and
-soundcard. Everything else needs only Python 3.11+.
+Required: Python 3.11+, and `jq` for the bar widget. Optional: `cava` for `music`, pillow
+for `gif`. `install.sh` stops on an older Python and lists the optional ones that are
+missing.
 
 ---
 

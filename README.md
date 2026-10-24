@@ -18,7 +18,7 @@ Makes the **AULA F75 Max** keyboard follow your [Omarchy](https://omarchy.org) t
 
 - An AULA F75 Max and Omarchy. Tested on Omarchy 4.0.6 (Arch, Hyprland); other versions are untested.
 - `python3` 3.11+ and `jq` (widget).
-- Optional: [`cava`](https://github.com/karlstav/cava) for music (`pacman -S cava`), `python-pillow` for LCD images, or `numpy` + `soundcard` for music without cava.
+- Optional: [`cava`](https://github.com/karlstav/cava) for the music visualiser (`sudo pacman -S cava`) and `python-pillow` for LCD images. `install.sh` lists the ones that are missing.
 - `install.sh` needs sudo once, for a udev rule, a systemd one-shot unit and an `aula` group.
 
 ## Install

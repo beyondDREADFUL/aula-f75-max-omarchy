@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-24 (v2, dependencies)
+- Music needs cava now; the built-in numpy/soundcard analyser and `f75ctl music --source`
+  are removed (`soundcard` isn't packaged for Arch, and cava is cheaper and smoother).
+  Without cava, music stops with "music needs cava: sudo pacman -S cava".
+- `install.sh` stops if Python is older than 3.11 and ends with the optional dependencies
+  that are missing (cava, pillow); it installs none of them.
+
 ## 2026-10-23 (v2, widget redesign)
 - The widget is rebuilt from Omarchy's own components and is shorter. Every choice applies
   at once (only the hex field waits for Apply). New: colours from the active theme next to

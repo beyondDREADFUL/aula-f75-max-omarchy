@@ -81,7 +81,7 @@ def cmd_music(kb, a):
     if kb.transport != "wired":
         raise Unsupported("music needs the USB cable (live frames don't go over 2.4G)")
     opts = music.Options(a.fps, a.color, a.background, a.background_brightness, a.amplitude,
-                         a.source, a.seconds, a.test)
+                         a.seconds, a.test)
     fps, stopped_by = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"))
     print(f"{fps:.1f} fps", flush=True)
     kb.close()
@@ -159,8 +159,6 @@ def build_parser():
 
     s = sub.add_parser("music", help="spectrum visualiser from system sound (Ctrl+C stops)")
     s.add_argument("--test", action="store_true", help="moving test pattern, no audio needed")
-    s.add_argument("--source", choices=music.SOURCES, default="auto",
-                   help="audio analyser: cava if installed (default), else the built-in one")
     s.add_argument("--seconds", type=float, help="stop after this many seconds")
     s.add_argument("--fps", type=float, default=20)
     s.add_argument("--color", choices=music.BAR_COLORS, default="rainbow", help="bar colours")

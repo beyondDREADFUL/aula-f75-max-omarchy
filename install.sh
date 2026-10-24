@@ -12,9 +12,10 @@ user=$(id -un); group=$(id -gn)
 root() {
     if $dry; then echo "+ sudo $*"; else sudo "$@"; fi
 }
-for tool in python3 jq; do
-    command -v "$tool" >/dev/null || echo "warning: $tool not found (the controller needs python3, the widget needs jq)" >&2
-done
+# python 3.11+ is required (tomllib); stop before installing anything that can't run
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
+    || { echo "python 3.11 or newer is required: sudo pacman -S python" >&2; exit 1; }
+command -v jq >/dev/null || echo "warning: jq not found; the bar widget needs it: sudo pacman -S jq" >&2
 
 # the libraries the commands import; replaced as a whole so removed modules don't linger
 lib="$HOME/.local/share/omarchy-keyboard-accent"
@@ -56,3 +57,13 @@ root udevadm trigger --subsystem-match=hidraw --action=change
 echo "Done. Log out and back in once so the 'aula' group applies, then run:"
 echo "  omarchy-keyboard-accent apply"
 echo "Enable the bar widget with: omarchy plugin enable beyond.keyboard-accent && omarchy restart shell"
+
+# optional features: say what is missing, install nothing
+missing=()
+command -v cava >/dev/null || missing+=("  music visualiser needs cava:   sudo pacman -S cava")
+python3 -c 'import PIL' 2>/dev/null || missing+=("  LCD images (f75ctl gif) need pillow:   sudo pacman -S python-pillow")
+if [ ${#missing[@]} -gt 0 ]; then
+    echo
+    echo "Optional, not installed:"
+    printf '%s\n' "${missing[@]}"
+fi

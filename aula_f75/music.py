@@ -1,7 +1,7 @@
 """Music visualiser: spectrum bars streamed as live frames (cable only).
 
-Levels come from cava when it is installed (its own PipeWire/PulseAudio input, smoothing and
-auto-sensitivity), else from a numpy FFT of the system audio (needs numpy and soundcard).
+Levels come from cava (pacman -S cava), which brings its own PipeWire/PulseAudio input,
+smoothing and auto-sensitivity.
 The background behind the bars is off, a named or hex colour, or a slow hue cycle. Live
 frames bypass the firmware's white balance, so every colour goes through lighting.calibrate
 to look the same as an effect.
@@ -29,7 +29,6 @@ SOLID = {"white": (255, 255, 255), "red": (255, 0, 0), "orange": (255, 100, 0),
 BAR_COLORS = ["green-yellow-red", "rainbow", "reverse-rainbow", "gradient", "spectrum-cycle",
               *SOLID, "off"]
 BACKGROUNDS = ["off", "spectrum-cycle", *SOLID]
-SOURCES = ["auto", "cava", "builtin"]
 
 
 class MusicError(RuntimeError):
@@ -43,7 +42,6 @@ class Options:
     background: str = "off"            # one of BACKGROUNDS, or RRGGBB
     background_brightness: int = 100   # percent
     amplitude: int = 3                 # sensitivity 1-5
-    source: str = "auto"               # one of SOURCES
     seconds: float | None = None       # None = until interrupted
     test: bool = False                 # moving test pattern, no audio
 
@@ -103,11 +101,11 @@ mono_option = average
 
 
 def cava_levels(opts: Options):
-    """(name, iterator of COLS levels 0..1, close), or None if cava is missing or prints
+    """(iterator of COLS levels 0..1, close). Raises MusicError if cava is missing or prints
     nothing within 3 s."""
     exe = shutil.which("cava")
     if not exe:
-        return None
+        raise MusicError("music needs cava: sudo pacman -S cava")
     with tempfile.NamedTemporaryFile("w", suffix=".conf", delete=False) as cfg:
         cfg.write(CAVA_CONFIG.format(fps=max(1, round(opts.fps)), bars=COLS))
     proc = subprocess.Popen([exe, "-p", cfg.name], stdin=subprocess.DEVNULL,
@@ -121,8 +119,7 @@ def cava_levels(opts: Options):
     if not select.select([fd], [], [], 3)[0] or proc.poll() is not None:
         close()
         err = proc.stderr.read().decode(errors="replace").strip()
-        print(f"cava did not start{': ' + err[-200:] if err else ''}", file=sys.stderr)
-        return None
+        raise MusicError(f"cava did not start{': ' + err[-200:] if err else ''}")
     gain = 0.6 + 0.2 * opts.amplitude
 
     def levels():
@@ -138,42 +135,7 @@ def cava_levels(opts: Options):
             if whole:
                 frame, buf = buf[whole - COLS:whole], buf[whole:]
                 yield [min(1.0, v / 255 * gain) for v in frame]
-    return "cava", levels(), close
-
-
-def builtin_levels(opts: Options):
-    """(name, iterator of COLS levels 0..1, close) from a numpy FFT of the system audio."""
-    try:
-        import numpy as np
-        import soundcard as sc
-    except ImportError as exc:
-        raise MusicError("music needs cava, or: pip install numpy soundcard") from exc
-    rate, n = 48000, 2048
-    spk = sc.default_speaker()
-    # small blocks so short reads return promptly
-    rec = sc.get_microphone(id=str(spk.name), include_loopback=True).recorder(
-        samplerate=rate, channels=1, blocksize=256)
-    rec.__enter__()
-    edges = np.geomspace(40, 16000, COLS + 1)
-    freqs = np.fft.rfftfreq(n, 1 / rate)
-    bands = [(freqs >= lo) & (freqs < hi) for lo, hi in zip(edges[:-1], edges[1:])]
-
-    def levels():
-        lv, peak, data, consumed, t0 = np.zeros(COLS), 1e-3, np.zeros(n), 0, time.time()
-        while True:
-            # read exactly the audio produced since the last read; a fixed amount per
-            # frame let the backlog grow and the bars fell seconds behind the music
-            new = rec.record(numframes=max(int(rate * (time.time() - t0)) - consumed, 256))[:, 0]
-            consumed += len(new)
-            data = np.concatenate([data, new])[-n:]
-            spec = np.abs(np.fft.rfft(data * np.hanning(n)))
-            power = np.log1p(np.array([spec[m].mean() if m.any() else 0 for m in bands]) * 50)
-            peak = max(peak * 0.995, power.max())          # slow auto-gain
-            target = np.clip(power / peak, 0, 1) if peak > 0.05 else np.zeros(COLS)
-            target = np.clip(target * (0.6 + 0.2 * opts.amplitude), 0, 1)
-            lv = np.maximum(target, lv * 0.75)             # fast attack, smooth decay
-            yield lv
-    return spk.name, levels(), lambda: rec.__exit__(None, None, None)
+    return levels(), close
 
 
 def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
@@ -198,12 +160,8 @@ def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
                 yield [(math.sin(t * 3 + c * 0.5) + 1) / 2 for c in range(COLS)]
         levels = pattern()
     else:
-        source = cava_levels(opts) if opts.source != "builtin" else None
-        if source is None:
-            if opts.source == "cava":
-                raise MusicError("cava is not installed or did not start")
-            source = builtin_levels(opts)
-        name, levels, close = source
+        name = "cava"
+        levels, close = cava_levels(opts)
     # Ctrl+C and SIGTERM only set a flag: stopping inside a frame leaves the keyboard
     # waiting for the rest of it, and it then rejects the next command
     stop = []
@@ -214,7 +172,7 @@ def run(kb, opts: Options, on_start=print) -> tuple[float, int | None]:
         while not stop and (opts.seconds is None or time.time() - t_start < opts.seconds):
             loop_start = time.time()
             draw(next(levels))
-            # sources can return early with buffered audio; don't exceed fps
+            # cava can deliver buffered frames at once; don't exceed fps
             time.sleep(max(0, interval - (time.time() - loop_start)))
     finally:
         for sig, handler in previous.items():
