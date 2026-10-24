@@ -1,5 +1,84 @@
 # Changelog
 
+## 2026-10-24 (v2, music follows the theme)
+- With the widget's theme-colour background, a theme change while music runs moves the
+  background to the new theme colour within a frame, instead of waiting for music to stop.
+  `apply` sends the visualiser SIGHUP and returns at once (no 15 s wait for the lock); the
+  visualiser reloads the colour between frames. New `f75ctl music --background theme`.
+- The theme-colour background is no longer dimmed to 30 %; it shows at full brightness.
+
+## 2026-10-24 (v2, Fn-key changes investigated)
+- Documented what the keyboard reveals about changes made with its own Fn keys
+  (docs/HANDBOOK.md §5.3): no report on any cable or dongle interface; over the cable the
+  LED table shows the current colour and level of a static colour and whether an effect
+  is animated, but not which effect or its speed. A widget that followed these changes was
+  tried and left out (about 0.9 s per read, and animated effects can't be named). The
+  Fn+Tab colours are listed there.
+
+## 2026-10-24 (v2, transitions)
+- Colour changes over the cable animate: a wave from left to right by default, or a fade or
+  a burst from the middle (`[lighting] transition`, `transition_time`, or the widget). The
+  new effect is set at live-frame pacing between the first frame and the animation, so
+  neither end flashes; the keys still go dark for a moment as the animation starts.
+
+## 2026-10-24 (v2, dependencies)
+- Music needs cava now; the built-in numpy/soundcard analyser and `f75ctl music --source`
+  are removed (`soundcard` isn't packaged for Arch, and cava is cheaper and smoother).
+  Without cava, music stops with "music needs cava: sudo pacman -S cava".
+- `install.sh` stops if Python is older than 3.11 and ends with the optional dependencies
+  that are missing (cava, pillow); it installs none of them.
+
+## 2026-10-23 (v2, widget redesign)
+- The widget is rebuilt from Omarchy's own components and is shorter. Every choice applies
+  at once (only the hex field waits for Apply). New: colours from the active theme next to
+  the bright presets, brightness 1-5, effect speed, the connection and the 2.4G battery
+  level in the header. Effects fold out inside the panel instead of a popup that the
+  panel's edge cut off. Music is disabled with a note when only the dongle is connected.
+- The bar shows a fixed keyboard icon in the bar's colour instead of a coloured dot; the tooltip carries
+  the state.
+- Keep this colour now pins the current colour when switched on and shows the pin state;
+  before, any refresh (a brightness or effect change) switched it back off before a colour
+  was picked. The music background shows the running one after a shell restart.
+- Switching between animated effects no longer lowers the brightness: it is read back from
+  the keys only when they showed a static colour (a breathing key read as a dimmer level).
+- New keybinding targets: `brighter`, `dimmer`, `brightness N`.
+- New controller commands: `palette`, `set-effect NAME --speed N`; `status` reports the
+  speed and the connected transports.
+
+## 2026-10-23 (v2, widget)
+- The widget can switch the effect the accent is shown as, and start and stop the music
+  visualiser (dark or the theme colour behind the bars). New `omarchy-keyboard-accent
+  set-effect`.
+- `f75ctl music --background` also takes a hex colour.
+- Removed the ambilight background (the screen's colour behind the bars). It was unclear
+  what it followed, an ordinary desktop turned it white, and it cost 44-74 % of a CPU core
+  against about 4 % for music without it; the theme background covers what it was for.
+- Stopping music no longer leaves the keyboard rejecting the theme apply: Ctrl+C and
+  SIGTERM now stop between frames.
+- Changing the music background in the widget while music runs restarts it with the new
+  background (SIGUSR1 stops `f75ctl music` without handing back to the theme).
+- `f75ctl music` over the dongle fails at once with "music needs the USB cable".
+
+## 2026-10-23 (v2)
+- Rebuilt on `aula_f75`, a protocol library with every command checked on the keyboard
+  (cable and dongle). The controller, `f75ctl` and the music visualiser share it and one
+  lock, so they never interleave packets; a theme change during `f75ctl music` is applied
+  when the music stops.
+- Corrected the model of the keyboard (docs/HANDBOOK.md §14): the keys are in the slots
+  effects write, the 61 "direct" slots are empty, there is no separate underglow, and the
+  firmware's red gain is a correct white balance. Removed the direct-frame write, the zone
+  bootstrap, the table cache, `match_direct_zone` and `underglow_correction`. A wired apply
+  is now one effect command (about 0.57 s including the LCD clock).
+- New config: `[lighting] effect`, `speed`, `direction` (show the accent as any of the 19
+  effects) and `[lcd] clock` (sync the LCD clock on every wired apply). v1 keys that no
+  longer apply are ignored.
+- New `f75ctl`: effects, per-key colours (also over the dongle), remaps and macros with
+  key combos in one layer, LCD clock and images, music visualiser (cava or built-in,
+  colour backgrounds), battery.
+- udev rule: also grants the LCD image interface; the dongle rule matches its command
+  interface only.
+- Handbook rewritten from verified facts, each marked seen/read/sent/assumed.
+
 ## 2026-10-22 (plugin layout)
 - The widget now sits at the repository root (`manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent`) so `omarchy plugin add <repo url>` works and the repo can be listed on the Omarchy plugin marketplace. Added `license` to the manifest and a `preview.png`. `plugin/README.md` moved to `docs/WIDGET.md`. The widget now says "Controller missing: run install.sh (see README)" when `omarchy-keyboard-accent` is not installed.
 

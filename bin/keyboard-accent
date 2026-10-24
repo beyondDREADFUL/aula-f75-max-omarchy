@@ -2,11 +2,21 @@
 # Helper for the Keyboard Accent bar widget. Wraps omarchy-keyboard-accent.
 # Every command prints one line of JSON, so the widget needs no exit codes.
 #
-#   status                              theme, keyboard colour, match, pin
+#   status                              theme, keyboard colour, match, pin, effect, speed,
+#                                       brightness, connected transports, music and its
+#                                       background
+#   palette                             the theme's colours and what the keys would show
 #   targets [--exact] #HEX...           colour the keys would show for each, no writes
 #   preview [--exact] #HEX              same for a single colour
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
+#   effect  NAME|default [SPEED]        show the accent as this effect (default: config's)
+#   brightness N                        brightness 1-5
+#   transition none|fade|wave|explode   how the keys change colour over the cable
+#   battery                             battery percent (2.4 GHz dongle only)
+#   music   start [off|theme]           start the music visualiser (USB cable only);
+#                                       theme puts the theme colour behind the bars
+#   music   stop                        stop it; the keyboard returns to the theme colour
 #
 # --exact uses the colour as written. Without it the controller applies the
 # theme's saturation and lightness limits, which tint neutrals such as white.
@@ -16,9 +26,21 @@
 set -u
 
 CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
+F75CTL="$HOME/.local/bin/f75ctl"
 STATE_DIR="$HOME/.local/state/omarchy/keyboard-accent"
 STATE="$STATE_DIR/state.json"
 PIN="$STATE_DIR/pin.json"
+MUSIC_PID="$STATE_DIR/music.pid"
+MUSIC_LOG="$STATE_DIR/music.log"
+MUSIC_BG="$STATE_DIR/music.background"
+
+# The pid of the running visualiser, if any.
+music_pid() {
+    local pid
+    pid=$(cat "$MUSIC_PID" 2>/dev/null) || return 1
+    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && grep -q f75ctl "/proc/$pid/cmdline" 2>/dev/null \
+        && echo "$pid"
+}
 
 fail() {
     jq -nc --arg error "$1" '{ok: false, error: $error}'
@@ -63,7 +85,15 @@ fi
 
 case "$command" in
 status)
-    theme=$("$CONTROLLER" status 2>/dev/null | awk '/^target:/ {print $2}')
+    status=$("$CONTROLLER" status 2>/dev/null)
+    theme=$(awk '/^target:/ {print $2}' <<<"$status")
+    effect=$(awk '/^effect:/ {print $2}' <<<"$status")
+    speed=$(awk '/^speed:/ {print $2}' <<<"$status")
+    transition=$(awk '/^transition:/ {print $2}' <<<"$status")
+    devices=$(awk '/^devices:/ {print $2}' <<<"$status")
+    music=false
+    music_pid >/dev/null && music=true
+    music_bg=$(cat "$MUSIC_BG" 2>/dev/null)
     [ -n "$theme" ] || fail "could not read the theme colour"
     keyboard="" source="" brightness=0 transport=""
     IFS=$'\t' read -r keyboard source brightness transport < <(
@@ -77,7 +107,10 @@ status)
     fi
     pinned=$(jq -r '.color // empty' "$PIN" 2>/dev/null)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
-        --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" '{
+        --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
+        --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
+        --arg devices "${devices:-none}" --arg music_bg "${music_bg:-off}" \
+        --arg transition "${transition:-wave}" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -86,7 +119,13 @@ status)
         pinned: ($pinned != ""),
         pin: $pinned,
         brightness: $brightness,
-        transport: $transport
+        transport: $transport,
+        effect: $effect,
+        speed: $speed,
+        transition: $transition,
+        devices: ($devices | split(",") | map(select(. != "none"))),
+        music: $music,
+        musicBackground: $music_bg
     }'
     ;;
 
@@ -119,8 +158,83 @@ reset)
     jq -nc '{ok: true}'
     ;;
 
+palette)
+    "$CONTROLLER" palette 2>/dev/null \
+        | jq -R -nc '{ok: true, colors: [inputs | split(" ") | {source: .[0], target: .[1]}]}' \
+        || fail "could not read the theme colours"
+    ;;
+
+effect)
+    [ -n "${1:-}" ] || fail "no effect given"
+    speed_args=()
+    [ -n "${2:-}" ] && speed_args=(--speed "$2")
+    "$CONTROLLER" set-effect "$1" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
+        || fail "could not set effect $1"
+    jq -nc '{ok: true}'
+    ;;
+
+transition)
+    [[ ${1:-} =~ ^(none|fade|wave|explode)$ ]] || fail "transition must be none, fade, wave or explode"
+    "$CONTROLLER" set-transition "$1" >/dev/null 2>&1 || fail "could not set the transition"
+    jq -nc '{ok: true}'
+    ;;
+
+brightness)
+    [[ ${1:-} =~ ^[1-5]$ ]] || fail "brightness must be 1-5"
+    "$CONTROLLER" set-brightness "$1" >/dev/null 2>&1 || fail "could not set brightness"
+    jq -nc '{ok: true}'
+    ;;
+
+battery)
+    devices=$("$CONTROLLER" status 2>/dev/null | awk '/^devices:/ {print $2}')
+    [ "$devices" = "wireless" ] || fail "battery is only reported over the 2.4 GHz dongle"
+    percent=$("$F75CTL" battery 2>/dev/null | grep -oE '[0-9]+') || fail "no battery reading"
+    jq -nc --argjson percent "$percent" '{ok: true, percent: $percent}'
+    ;;
+
+music)
+    case "${1:-}" in
+    start)
+        case "${2:-off}" in
+        off) background=(--background off) ;;
+        # theme: f75ctl reads the colour itself and again on SIGHUP, which the controller
+        # sends on a theme change, so the background follows the theme
+        theme) background=(--background theme) ;;
+        *) fail "unknown background ${2}" ;;
+        esac
+        if pid=$(music_pid) && [ "$(cat "$MUSIC_BG" 2>/dev/null)" != "${2:-off}" ]; then
+            # other background: stop without handing back to the theme, then start again
+            kill -USR1 "$pid"
+            for _ in $(seq 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        fi
+        if ! music_pid >/dev/null; then
+            mkdir -p "$STATE_DIR"
+            printf '%s\n' "${2:-off}" >"$MUSIC_BG"
+            # setsid detaches it from the widget; it runs until `music stop`
+            nohup setsid "$F75CTL" music "${background[@]}" >"$MUSIC_LOG" 2>&1 </dev/null &
+            echo $! >"$MUSIC_PID"
+            sleep 1.5
+            if ! music_pid >/dev/null; then
+                error=$(grep -m1 -i 'f75ctl:\|error' "$MUSIC_LOG" | sed 's/^f75ctl: //')
+                fail "${error:-music did not start}"
+            fi
+        fi
+        jq -nc '{ok: true, music: true}'
+        ;;
+    stop)
+        if pid=$(music_pid); then
+            kill -TERM "$pid"          # f75ctl then hands the keyboard back to the theme
+            for _ in $(seq 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        fi
+        rm -f "$MUSIC_PID"
+        jq -nc '{ok: true, music: false}'
+        ;;
+    *) fail "usage: music start [off|theme] | music stop" ;;
+    esac
+    ;;
+
 *)
-    echo "usage: keyboard-accent status|targets|preview|apply|reset" >&2
+    echo "usage: keyboard-accent status|palette|targets|preview|apply|reset|effect|transition|brightness|battery|music" >&2
     exit 2
     ;;
 esac

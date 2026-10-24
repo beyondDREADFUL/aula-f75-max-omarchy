@@ -1,79 +1,68 @@
-# AULA F75 Max keyboard accent.
+# AULA F75 Max: follow the Omarchy theme accent.
 #
-# On the wired keyboard, the key LEDs use the direct per-key frame, which has
-# no brightness byte.  The underglow/effect LEDs use the static effect command,
-# which does.  This script reads the live LED table, infers the current
-# brightness level from the effect group, and applies it again on every theme
-# change.
-#
-# On the 2.4 GHz dongle there is no documented per-key frame or LED readback.
-# The script uses the firmware's static effect, so the whole LED set receives
-# one accent and the last stored brightness level is reused.
+# The theme accent (or a colour from [theme_overrides]) becomes the colour of the
+# lighting effect on all 80 keys, over the USB cable or the 2.4 GHz dongle.  The
+# keyboard's firmware applies its own white balance, so colours are sent as chosen.
 
 [color]
-# Follow the active Omarchy theme's accent.
+# "theme" follows the active Omarchy theme; "fixed" always uses fixed_color.
 mode = "theme"
 
-# Used only when mode = "fixed".  Still goes through the automatic colour choice
-# below, exactly like a theme accent.
+# Used only when mode = "fixed".  Goes through the automatic choice below, like
+# a theme accent.
 fixed_color = "#F34820"
 
-# How the automatic colour is chosen for a theme accent that has no entry in
-# the overrides table at the bottom (and for --color without --exact, and
-# fixed_color):
+# The automatic choice for an accent without an entry in [theme_overrides]
+# (also for fixed_color and for --color without --exact):
 #   - saturated accents (saturation 0.80 or more) are kept;
 #   - muted accents keep their hue, with saturation lifted to
 #     saturation_floor + saturation_gain x their saturation, at most 0.95;
 #   - grey and pale accents (such as cream) become a soft white;
-#   - lightness is held between min_lightness and max_lightness.  The LED
-#     diffuser makes keys read lighter than the monitor swatch, so the upper
-#     bound sits a little below it.
+#   - lightness is held between min_lightness and max_lightness.  Keys read
+#     lighter than the monitor swatch, so the upper bound sits a little below it.
 saturation_floor = 0.55
 saturation_gain = 0.5
 max_lightness = 0.54
 min_lightness = 0.46
 
-# The underglow's firmware cuts red to about two thirds, which drags warm
-# colours toward green and purples toward blue.  When true, green and blue are
-# lowered a little for those colours so keys and underglow both stay close to
-# the intended hue.
-underglow_correction = true
-
 [device]
-# "auto" detects either the wired 0xFF13 command interface (0c45:800a)
-# or the 2.4 GHz dongle command interface (05ac:024f, usage page 0xFF60).
-# You can still set an explicit /dev/input/by-id/... path if you prefer.
-path = "auto"
-
-# When both transports are present, "auto" and "wired" use the wired
-# keyboard first.  Set this to "wireless" if the cable is connected only for
-# charging while the keyboard is actually being used over 2.4 GHz.
+# When the cable and the dongle are both plugged in, "auto" and "wired" use the
+# cable.  Set "wireless" if the cable is only charging while you type on 2.4 GHz.
 prefer = "auto"
 
 [lighting]
-# Brightness used only on the first run, before the live table can tell us
-# the current level.  Levels are 1-5.
+# The effect shown in the accent colour.  Any of: static, single-on, single-off,
+# glittering, falling, colourful, breath, spectrum, outward, scrolling, rolling,
+# rotating, explode, launch, ripples, flowing, pulsating, tilt, shuttle.
+# (See them with `f75ctl demo`; not every effect has been checked with a colour.)
+effect = "static"
+
+# Effect speed 0-5 and direction 0 or 1.  Static ignores both.
+speed = 3
+direction = 0
+
+# How the keys change from one static colour to the next over the USB cable: "wave" (left
+# to right), "explode" (out from the middle), "fade", or "none".  The dongle and animated
+# effects always change at once.  The keys briefly go dark as the animation starts; that
+# is the keyboard switching to streamed frames and can't be avoided.
+transition = "wave"
+transition_time = 1.0
+
+# Brightness 1-5 used until a level is known.  Over the cable the level you set
+# with the keyboard's own keys is read back and kept on every apply; over the
+# dongle the last applied level is reused (the dongle has no read-back).
 default_brightness = 5
 
-# Static-effect speed (1-5).  Static mode ignores it.
-speed = 3
-
-# Dongle colour byte order.  Most reverse-engineering sources use BGR
-# ([4]=B, [5]=G, [6]=R); use "rgb" if red and blue appear swapped on hardware.
-# This F75 Max unit was verified on real hardware to need "rgb".
-wireless_color_order = "rgb"
-
-# false: key LEDs get the saturated colour scaled to the current brightness
-#        level (at level 5 this is the raw colour).
-# true:  key LEDs exactly match the effect group's calibrated output (most
-#        uniform, but slightly less red/saturated).
-match_direct_zone = false
+[lcd]
+# Set the LCD clock to the system time on every apply over the cable (theme
+# change, login, plugging in).  The dongle can't set it.
+clock = true
 
 [theme_overrides]
-# An entry pins a colour to a theme slug and is used as-is, bypassing the
-# automatic choice above.  The bundled Omarchy themes are listed so their
-# colours stay fixed; each equals the automatic choice except Kanagawa, whose
-# accent is cream.  Add a line for any other theme, or change one to taste.
+# An entry pins a colour to a theme slug and is used as written, bypassing the
+# automatic choice above.  The bundled Omarchy themes are listed so their colours
+# stay fixed; the values were chosen and checked on the keys.  Add a line for any
+# other theme, or change one to taste; delete a line to use the automatic choice.
 # Bundled Omarchy themes
 catppuccin = "#1E70F5"  # accent #89b4fa, hue kept
 catppuccin-latte = "#1E66F5"  # accent #1e66f5, hue kept
