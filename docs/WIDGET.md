@@ -3,7 +3,7 @@
 Omarchy bar widget for the AULA F75 Max, built on `omarchy-keyboard-accent` and
 `f75ctl`, from Omarchy's own UI components.
 
-- The bar shows a fixed white keyboard icon. Left-click opens the panel,
+- The bar shows a fixed keyboard icon in the bar's own colour, like the other icons. Left-click opens the panel,
   right-click returns the keyboard to the theme colour. The tooltip shows the
   colour, effect, brightness, connection and whether music is on.
 - **Every choice applies at once**, except the hex field, which waits for Apply.

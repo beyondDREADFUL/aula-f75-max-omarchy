@@ -6,7 +6,7 @@
   the bright presets, brightness 1-5, effect speed, the connection and the 2.4G battery
   level in the header. Effects fold out inside the panel instead of a popup that the
   panel's edge cut off. Music is disabled with a note when only the dongle is connected.
-- The bar shows a fixed white keyboard icon instead of a coloured dot; the tooltip carries
+- The bar shows a fixed keyboard icon in the bar's colour instead of a coloured dot; the tooltip carries
   the state.
 - Keep this colour now pins the current colour when switched on and shows the pin state;
   before, any refresh (a brightness or effect change) switched it back off before a colour

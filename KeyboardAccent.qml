@@ -6,7 +6,7 @@ import qs.Commons as Commons
 import qs.Ui
 
 // Bar widget for the AULA F75 Max: the keyboard's colour, brightness, effect and music.
-// The bar shows a fixed white keyboard icon; left-click opens the panel, right-click
+// The bar shows a fixed keyboard icon in the bar's colour; left-click opens the panel, right-click
 // returns the keyboard to the theme colour.
 //
 // Every choice applies at once, except the hex field, which waits for Apply. All
@@ -294,7 +294,6 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: "󰌌"
-    foreground: "#FFFFFF"
     useActiveColor: false
     tooltipText: root.tooltipText
     onPressed: function(mouseButton) {
