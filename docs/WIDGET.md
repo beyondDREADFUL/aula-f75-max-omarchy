@@ -23,9 +23,10 @@ already show what the keys get, and the keyboard's firmware applies its own whit
 balance (docs/HANDBOOK.md §5).
 
 A colour lasts until the next theme change, when the theme hook sets the theme
-colour again. With **Keep this colour** on, the next colour picked is pinned: it
-survives theme changes, login and reconnects until Reset to theme. Turning Keep off
-releases a pinned colour.
+colour again. **Keep this colour** shows whether the colour is pinned: switching it
+on pins the colour the keys have now, so it survives theme changes, login and
+reconnects; a colour picked while it is on replaces the pin. Switching it off, or
+Reset to theme, releases it.
 
 The effect and speed chosen here are remembered over the config's `[lighting]`
 (`omarchy-keyboard-accent set-effect NAME --speed N`). Music runs `f75ctl music` in

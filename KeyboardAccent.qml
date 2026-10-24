@@ -33,7 +33,6 @@ Panel {
 
   // Panel state.
   property var palette: []           // [{source, target}] from the theme
-  property bool keep: false           // pin the next colour across theme changes
   property string previewHex: ""      // what the keys would show for the hex field
   property string musicBackground: "off"
   property bool effectsOpen: false    // the effect list is folded out
@@ -156,12 +155,12 @@ Panel {
       root.keyboardHex = String(result.keyboard || "").toUpperCase()
       root.matches = result.matches === true
       root.pinned = result.pinned === true
-      root.keep = root.pinned
       root.brightness = Math.max(1, Math.min(5, Number(result.brightness) || 5))
       root.effect = String(result.effect || "static")
       root.speed = Number(result.speed)
       root.devices = result.devices || []
       root.musicOn = result.music === true
+      if (root.musicOn && result.musicBackground) root.musicBackground = String(result.musicBackground)
     })
   }
 
@@ -190,9 +189,10 @@ Panel {
     })
   }
 
-  // Colours are sent as shown: swatches already show what the keys get.
+  // Colours are sent as shown: swatches already show what the keys get. While a colour
+  // is pinned, a new one replaces the pin.
   function setColour(hex) {
-    root.act(["apply", "--exact"].concat(root.keep ? ["--pin"] : [], [hex]), "colour",
+    root.act(["apply", "--exact"].concat(root.pinned ? ["--pin"] : [], [hex]), "colour",
              "Applying " + hex + "…", "Applied " + hex)
   }
 
@@ -211,12 +211,14 @@ Panel {
     root.act(["reset"], "colour", "Returning to the theme colour…", "Back on the theme colour")
   }
 
-  // Turning Keep off releases a colour that is pinned now.
+  // Keep shows whether the colour is pinned: on pins the colour the keys have now, off
+  // releases it so the next theme change sets the theme colour.
   function setKeep(on) {
-    root.keep = on
-    if (!on && root.pinned)
-      root.act(["apply", "--exact", root.keyboardHex], "colour", "Unpinning…",
-               "Unpinned: the next theme change sets the theme colour")
+    if (root.keyboardHex === "") return
+    root.pinned = on
+    root.act(["apply", "--exact"].concat(on ? ["--pin"] : [], [root.keyboardHex]), "colour",
+             on ? "Pinning " + root.keyboardHex + "…" : "Unpinning…",
+             on ? "Pinned " + root.keyboardHex : "Unpinned: the next theme change sets the theme colour")
   }
 
   function setBrightness(level) {
@@ -542,9 +544,9 @@ Panel {
         LabelledRow {
           label: "Keep this colour through theme changes"
           ToggleSwitch {
-            checked: root.keep
+            checked: root.pinned
             foreground: root.fg
-            onToggled: root.setKeep(!root.keep)
+            onToggled: root.setKeep(!root.pinned)
           }
         }
 

@@ -3,7 +3,8 @@
 # Every command prints one line of JSON, so the widget needs no exit codes.
 #
 #   status                              theme, keyboard colour, match, pin, effect, speed,
-#                                       brightness, connected transports, music
+#                                       brightness, connected transports, music and its
+#                                       background
 #   palette                             the theme's colours and what the keys would show
 #   targets [--exact] #HEX...           colour the keys would show for each, no writes
 #   preview [--exact] #HEX              same for a single colour
@@ -90,6 +91,7 @@ status)
     devices=$(awk '/^devices:/ {print $2}' <<<"$status")
     music=false
     music_pid >/dev/null && music=true
+    music_bg=$(cat "$MUSIC_BG" 2>/dev/null)
     [ -n "$theme" ] || fail "could not read the theme colour"
     keyboard="" source="" brightness=0 transport=""
     IFS=$'\t' read -r keyboard source brightness transport < <(
@@ -105,7 +107,7 @@ status)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
         --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
         --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
-        --arg devices "${devices:-none}" '{
+        --arg devices "${devices:-none}" --arg music_bg "${music_bg:-off}" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -118,7 +120,8 @@ status)
         effect: $effect,
         speed: $speed,
         devices: ($devices | split(",") | map(select(. != "none"))),
-        music: $music
+        music: $music,
+        musicBackground: $music_bg
     }'
     ;;
 

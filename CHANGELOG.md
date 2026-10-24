@@ -8,6 +8,9 @@
   panel's edge cut off. Music is disabled with a note when only the dongle is connected.
 - The bar shows a fixed white keyboard icon instead of a coloured dot; the tooltip carries
   the state.
+- Keep this colour now pins the current colour when switched on and shows the pin state;
+  before, any refresh (a brightness or effect change) switched it back off before a colour
+  was picked. The music background shows the running one after a shell restart.
 - Switching between animated effects no longer lowers the brightness: it is read back from
   the keys only when they showed a static colour (a breathing key read as a dimmer level).
 - New keybinding targets: `brighter`, `dimmer`, `brightness N`.
