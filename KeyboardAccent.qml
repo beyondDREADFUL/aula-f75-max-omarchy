@@ -293,7 +293,7 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰌌"
+    text: "󰧹"
     useActiveColor: false
     tooltipText: root.tooltipText
     onPressed: function(mouseButton) {
