@@ -1,4 +1,4 @@
-# omarchy-aula-f75-max-accent
+# AULA F75 Max for Omarchy
 
 Makes the **AULA F75 Max** keyboard follow your [Omarchy](https://omarchy.org) theme, and controls everything else the vendor app does, on Linux, over the USB cable or the 2.4 GHz dongle.
 
@@ -24,8 +24,8 @@ Makes the **AULA F75 Max** keyboard follow your [Omarchy](https://omarchy.org) t
 ## Install
 
 ```bash
-git clone https://github.com/beyondDREADFUL/omarchy-aula-f75-max-accent
-cd omarchy-aula-f75-max-accent
+git clone https://github.com/beyondDREADFUL/aula-f75-max-omarchy
+cd aula-f75-max-omarchy
 ./install.sh
 ```
 
