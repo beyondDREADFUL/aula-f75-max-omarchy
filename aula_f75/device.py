@@ -31,6 +31,8 @@ FRAME_DELAY = 0.003    # per live-frame packet: without it acks come back 00/ff 
                        # display freezes after a few seconds (Linux)
 CHUNK_DELAY = 0.15     # the vendor app sends one LCD chunk about every 160 ms
 TABLE_DELAY = 0.025    # between LED-table pages
+FAST_DELAY = 0.004     # an effect sent at this pacing fits between two live frames (seen:
+                       # no flash); the keyboard accepts it, though 04 f0 may not ack yet
 
 
 class NotFound(RuntimeError):
@@ -93,7 +95,7 @@ class Keyboard:
     def _no(self, what):
         raise Unsupported(f"{what} is not available over the {self.transport} connection")
 
-    def light(self, effect: lighting.Effect) -> None: self._no("lighting")
+    def light(self, effect: lighting.Effect, fast: bool = False) -> None: self._no("lighting")
     def key_colors(self, table: bytes, brightness: int = 5) -> None: self._no("per-key colour")
     def write_layer(self, table: bytes, fn_layer: bool = False) -> None: self._no("remapping")
     def write_macros(self, blob: bytes) -> None: self._no("macros")
@@ -134,8 +136,20 @@ class Wired(Keyboard):
                     raise
                 time.sleep(0.5)
 
-    def light(self, effect):
-        self.transaction(0x13, effect.payload())
+    def light(self, effect, fast=False):
+        """fast: live-frame pacing, for use during a transition (see transition.py)."""
+        if not fast:
+            self.transaction(0x13, effect.payload())
+            return
+        for n, p in enumerate([[0x04, 0x18], [0x04, 0x13, 0, 0, 0, 0, 0, 0, 1],
+                               effect.payload(), [0x04, 0x02], [0x04, 0xF0]]):
+            self.dev.set_feature(p)
+            time.sleep(FAST_DELAY)
+            if n in (0, 1, 3):
+                reply = self.dev.get_feature()
+                if reply[:2] != bytes(p[:2]) or reply[3] != 1:
+                    raise Rejected(f"keyboard rejected {bytes(p[:2]).hex(' ')} (reply "
+                                   f"{reply[:8].hex(' ')})")
 
     def key_colors(self, table, brightness=5):
         self.transaction(0x23, table)
@@ -220,7 +234,7 @@ class Dongle(Keyboard):
         for n in range((total + 27) // 28):
             self._send(cmd, n, buf[n * 28:(n + 1) * 28], length=min(28, total - n * 28))
 
-    def light(self, effect):
+    def light(self, effect, fast=False):
         self._send(0x05, 0, effect.payload())
 
     def key_colors(self, table, brightness=5):

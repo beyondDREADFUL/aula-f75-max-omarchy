@@ -180,7 +180,26 @@ What is known (**seen** unless noted):
 - Patched slots keep their values in the table after the stream stops and reappear in the
   next stream until an effect command rewrites them (**read**).
 
-The music visualiser (§9) is the only user of live frames.
+Live frames are used by the music visualiser (§9) and by colour transitions (§4.4).
+
+### 4.4 Colour transitions
+
+A change from one static colour to another over the cable can animate: `fade`, `wave` (left
+to right) or `explode` (out from the middle), each key following its grid position with a
+soft edge (`aula_f75/transition.py`). The order was found by trying the alternatives
+(**seen**):
+
+1. One live frame in the old colour, so the keyboard shows live frames.
+2. The new effect, sent at live-frame pacing (4 ms per packet instead of 35 ms) so it fits
+   between two frames. The keyboard accepts it (`04 18`, `04 13`, `04 02` ack `01`;
+   `04 f0` may not have acked yet, but the effect is set).
+3. The animation, about 20 frames per second.
+
+When the frames stop, the keyboard is already on the new effect. Setting the effect after
+the animation flashed the old colour at the end; setting it before at the normal pacing
+flashed the new colour at the start. The keys still go dark for a moment as the animation
+starts, with or without the page-0 read; this looks like the firmware switching to live
+frames and has not been avoided.
 
 ---
 
@@ -314,11 +333,13 @@ status is treated as an error. The last chunk's `len` covers only the used bytes
    mode, else a `[theme_overrides]` entry (as written), else the theme accent through the
    automatic choice (§10.2).
 2. Take the keyboard lock (wait up to 15 s; if busy, log `deferred` and stop).
-3. Cable: read page 0 for the brightness (§5.2), send one effect command, set the LCD
-   clock. Dongle: one `05` message with the stored brightness.
+3. Cable: read page 0 for the brightness (§5.2), then either a transition (§4.4) when both
+   the old and the new effect are static and the colour changes, or one effect command;
+   then the LCD clock. Dongle: one `05` message with the stored brightness.
 4. Save state and log one line.
 
-About 0.57 s over the cable including the clock, 0.1 s over the dongle (**read**).
+About 0.57 s over the cable including the clock, 1.5 s with a 1 s transition, 0.1 s over
+the dongle (**read**). Theme changes don't wait for it: the hook only queues the apply.
 `--verify` reads the table and checks the keys against `calibrate(target, level)` within 18.
 
 ### 10.2 Automatic colour choice
@@ -348,6 +369,7 @@ soft white that keeps their hue (warm if none); lightness is held in
 omarchy-keyboard-accent apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
 omarchy-keyboard-accent unpin | status [--read-table] | read | set-brightness N
 omarchy-keyboard-accent set-effect NAME|default [--speed N]   widget's effect, over the config's
+omarchy-keyboard-accent set-transition none|fade|wave|explode
 omarchy-keyboard-accent palette    the theme's colours as the keys would show them
 
 f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]

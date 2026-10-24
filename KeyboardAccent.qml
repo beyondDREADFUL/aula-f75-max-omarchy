@@ -27,6 +27,7 @@ Panel {
   property int brightness: 5
   property string effect: "static"
   property int speed: 3
+  property string transition: "wave"  // how the keys change colour over the cable
   property var devices: []
   property bool musicOn: false
   property int battery: -1           // percent over 2.4 GHz, -1 when unknown
@@ -158,6 +159,7 @@ Panel {
       root.brightness = Math.max(1, Math.min(5, Number(result.brightness) || 5))
       root.effect = String(result.effect || "static")
       root.speed = Number(result.speed)
+      root.transition = String(result.transition || "wave")
       root.devices = result.devices || []
       root.musicOn = result.music === true
       if (root.musicOn && result.musicBackground) root.musicBackground = String(result.musicBackground)
@@ -233,6 +235,13 @@ Panel {
     root.speed = speed
     root.act(["effect", name, String(speed)], "effect", "Switching to " + name + "…",
              "Effect: " + name)
+  }
+
+  // Saved for the next colour change; nothing changes on the keys now.
+  function setTransition(style) {
+    root.transition = style
+    root.act(["transition", style], "transition", "Transition: " + style + "…",
+             style === "none" ? "Colours change at once" : "Colours change with a " + style)
   }
 
   function setMusic(on) {
@@ -640,6 +649,19 @@ Panel {
             tickCount: 6
             value: root.speed
             onReleased: function(value) { root.setEffect(root.effect, Math.round(value)) }
+          }
+        }
+
+        LabelledRow {
+          label: "Transition"
+          ButtonGroup {
+            options: [{ value: "none", label: "None" }, { value: "fade", label: "Fade" },
+                      { value: "wave", label: "Wave" }, { value: "explode", label: "Burst" }]
+            value: root.transition
+            foreground: root.fg
+            fontFamily: root.family
+            fontSize: Style.font.caption
+            onChanged: function(value) { root.setTransition(value) }
           }
         }
 

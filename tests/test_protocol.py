@@ -2,6 +2,7 @@
 dongle, 2026-10-23) and against the read-back calibration measured in docs/HANDBOOK.md."""
 import datetime
 import unittest
+import unittest.mock
 
 from aula_f75 import keymap, lcd, lighting
 from aula_f75.device import Dongle, Wired
@@ -131,3 +132,44 @@ class Lcd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Transitions(unittest.TestCase):
+    def test_delays_span_the_sweep(self):
+        from aula_f75 import transition
+        for style in ("wave", "explode"):
+            delays = [transition.delay(style, s) for s in KEY_SLOTS]
+            self.assertGreaterEqual(min(delays), 0.0)
+            self.assertLessEqual(max(delays), 1.0)
+        self.assertEqual(transition.delay("wave", 1), 0.0)       # Esc starts the wave
+        # wave: Esc (left) starts before Delete (right); explode: the middle before Esc
+        self.assertLess(transition.delay("wave", 1), transition.delay("wave", 119))
+        self.assertLess(transition.delay("explode", 78), transition.delay("explode", 1))
+
+    def test_every_key_starts_old_and_ends_new(self):
+        from aula_f75 import transition
+        old, new = (255, 0, 0), (0, 0, 255)
+        for style in ("fade", "wave", "explode"):
+            for s in KEY_SLOTS:
+                self.assertEqual(transition.mix(style, s, 0.0, old, new), old)
+                self.assertEqual(transition.mix(style, s, 1.0, old, new), new)
+
+    def test_fast_effect_has_the_normal_framing(self):
+        kb = fake(Wired)
+        kb.light(lighting.Effect("static", (0, 255, 0)), fast=True)
+        self.assertEqual(kb.dev.features, [
+            "04 18", "04 13 00 00 00 00 00 00 01",
+            "01 00 ff 00 00 00 00 00 00 05 03 00 00 00 aa 55", "04 02", "04 f0"])
+
+    def test_run_starts_on_the_old_colour_and_sets_the_effect_first(self):
+        from aula_f75 import transition
+        kb = fake(Wired)
+        kb.transport = "wired"
+        frames = []
+        kb.frame = lambda colors: frames.append(colors)
+        effect = lighting.Effect("static", (0, 0, 255))
+        with unittest.mock.patch("time.sleep"):
+            transition.run(kb, (255, 0, 0), (0, 0, 255), effect, "wave", 0.5)
+        self.assertEqual(frames[0][1], lighting.calibrate((255, 0, 0)))
+        self.assertEqual(frames[-1][1], lighting.calibrate((0, 0, 255)))
+        self.assertEqual(kb.dev.features[0], "04 18")      # effect set after the first frame

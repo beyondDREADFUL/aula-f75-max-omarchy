@@ -12,6 +12,7 @@
 #   reset                               clear any pin, return to the theme colour
 #   effect  NAME|default [SPEED]        show the accent as this effect (default: config's)
 #   brightness N                        brightness 1-5
+#   transition none|fade|wave|explode   how the keys change colour over the cable
 #   battery                             battery percent (2.4 GHz dongle only)
 #   music   start [off|theme]           start the music visualiser (USB cable only);
 #                                       theme puts the theme colour, dimmed, behind the bars
@@ -88,6 +89,7 @@ status)
     theme=$(awk '/^target:/ {print $2}' <<<"$status")
     effect=$(awk '/^effect:/ {print $2}' <<<"$status")
     speed=$(awk '/^speed:/ {print $2}' <<<"$status")
+    transition=$(awk '/^transition:/ {print $2}' <<<"$status")
     devices=$(awk '/^devices:/ {print $2}' <<<"$status")
     music=false
     music_pid >/dev/null && music=true
@@ -107,7 +109,8 @@ status)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
         --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
         --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
-        --arg devices "${devices:-none}" --arg music_bg "${music_bg:-off}" '{
+        --arg devices "${devices:-none}" --arg music_bg "${music_bg:-off}" \
+        --arg transition "${transition:-wave}" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -119,6 +122,7 @@ status)
         transport: $transport,
         effect: $effect,
         speed: $speed,
+        transition: $transition,
         devices: ($devices | split(",") | map(select(. != "none"))),
         music: $music,
         musicBackground: $music_bg
@@ -166,6 +170,12 @@ effect)
     [ -n "${2:-}" ] && speed_args=(--speed "$2")
     "$CONTROLLER" set-effect "$1" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
         || fail "could not set effect $1"
+    jq -nc '{ok: true}'
+    ;;
+
+transition)
+    [[ ${1:-} =~ ^(none|fade|wave|explode)$ ]] || fail "transition must be none, fade, wave or explode"
+    "$CONTROLLER" set-transition "$1" >/dev/null 2>&1 || fail "could not set the transition"
     jq -nc '{ok: true}'
     ;;
 
@@ -226,7 +236,7 @@ music)
     ;;
 
 *)
-    echo "usage: keyboard-accent status|palette|targets|preview|apply|reset|effect|brightness|battery|music" >&2
+    echo "usage: keyboard-accent status|palette|targets|preview|apply|reset|effect|transition|brightness|battery|music" >&2
     exit 2
     ;;
 esac

@@ -11,7 +11,7 @@ import sys
 from collections import Counter
 from datetime import datetime
 
-from aula_f75 import lighting
+from aula_f75 import lighting, transition
 from aula_f75.device import Busy, NotFound, Rejected, open_keyboard, present
 from aula_f75.layout import KEY_SLOTS
 from aula_f75.lcd import clock_payload
@@ -145,8 +145,16 @@ def cmd_apply(args) -> int:
                 brightness = live_brightness(kb, last, stored)
             else:
                 brightness = stored
-            kb.light(lighting.Effect(config["effect"], target, brightness, config["speed"],
-                                     config["direction"]))
+            effect = lighting.Effect(config["effect"], target, brightness, config["speed"],
+                                     config["direction"])
+            # animate only from one static colour to another: an animated effect has no
+            # single colour to start from, and the dongle can't show live frames
+            if (kb.transport == "wired" and last and last != target and not args.dry_run
+                    and config["effect"] == "static" and state.get("effect", "static") == "static"):
+                transition.run(kb, last, target, effect, config["transition"],
+                               config["transition_time"])
+            else:
+                kb.light(effect)
             if kb.transport == "wired":
                 if config["lcd_clock"]:
                     kb.set_clock(clock_payload())
@@ -190,6 +198,11 @@ def cmd_palette(args) -> int:
     return 0
 
 
+def cmd_set_transition(args) -> int:
+    cfg.save_transition(args.style)
+    return 0
+
+
 def cmd_unpin(args) -> int:
     cfg.clear_pin()
     return 0
@@ -229,6 +242,7 @@ def cmd_status(args) -> int:
     print(f"target: {hexstr(target)} {describe(target)}")
     print(f"effect: {config['effect']} ({config['effect_source']})")
     print(f"speed: {config['speed']}")
+    print(f"transition: {config['transition']} {config['transition_time']:g}s")
     print(f"devices: {','.join(sorted(present())) or 'none'}")
     print(f"config: direction={config['direction']} prefer={config['device_prefer']} "
           f"lcd_clock={config['lcd_clock']} theme_overrides={len(config['theme_overrides'])}")
@@ -261,6 +275,9 @@ def build_parser() -> argparse.ArgumentParser:
                                                    if m not in cfg.NO_COLOR_EFFECTS]])
     e.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     e.set_defaults(func=cmd_set_effect)
+    t = sub.add_parser("set-transition", help="how the keys change colour over the cable")
+    t.add_argument("style", choices=transition.STYLES)
+    t.set_defaults(func=cmd_set_transition)
     sub.add_parser("palette", help="the theme's colours as the keys would show them").set_defaults(
         func=cmd_palette)
     sub.add_parser("unpin", help="clear the pinned colour (does not apply)").set_defaults(

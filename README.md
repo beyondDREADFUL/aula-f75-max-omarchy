@@ -8,7 +8,7 @@ Makes the **AULA F75 Max** keyboard follow your [Omarchy](https://omarchy.org) t
 
 ## Features
 
-- **Theme accent on the keys.** Every theme change, login and plug-in sets the keyboard to the theme's accent colour, chosen to read well on the LEDs, or to a colour you pin per theme.
+- **Theme accent on the keys.** Every theme change, login and plug-in sets the keyboard to the theme's accent colour, chosen to read well on the LEDs, or to a colour you pin per theme. Over the cable the new colour sweeps across the keys as a wave (or a fade or a burst from the middle).
 - **Bar widget.** Pick a colour (the theme's colours, bright presets or hex), brightness, any of the 19 lighting effects and their speed, and switch the music visualiser on and off.
 - **Music visualiser.** Spectrum bars from your system sound across the keys, with a dark or theme-colour background.
 - **`f75ctl`**, a command line for the rest: effects, per-key colours, key remaps and macros (with combos like `ctrl+c`), the LCD clock and images, and the battery level.
@@ -45,7 +45,7 @@ A keyboard icon in the bar. Left-click opens the panel, right-click returns the 
 | Header | how the keyboard is connected, and its battery over 2.4G |
 | Keyboard / Theme | the keys' colour next to the theme's |
 | Colour | the theme's colours, bright presets, a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
-| Light | brightness 1-5, effect, and speed for animated effects |
+| Light | brightness 1-5, effect, speed for animated effects, and the transition between colours |
 | Music | the visualiser switch (USB cable only) and the background behind the bars |
 
 Commands to bind to keys (for example with `bindd` in `~/.config/hypr/bindings.conf`):

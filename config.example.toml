@@ -41,6 +41,13 @@ effect = "static"
 speed = 3
 direction = 0
 
+# How the keys change from one static colour to the next over the USB cable: "wave" (left
+# to right), "explode" (out from the middle), "fade", or "none".  The dongle and animated
+# effects always change at once.  The keys briefly go dark as the animation starts; that
+# is the keyboard switching to streamed frames and can't be avoided.
+transition = "wave"
+transition_time = 1.0
+
 # Brightness 1-5 used until a level is known.  Over the cable the level you set
 # with the keyboard's own keys is read back and kept on every apply; over the
 # dongle the last applied level is reused (the dongle has no read-back).

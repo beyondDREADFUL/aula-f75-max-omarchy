@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from aula_f75.lighting import MODES
+from aula_f75.transition import STYLES
 
 HOME = Path.home()
 THEME_DIR = HOME / ".local/state/omarchy/current/theme"
@@ -32,6 +33,8 @@ DEFAULTS = {
     "default_brightness": 5,
     "speed": 3,
     "direction": 0,
+    "transition": "wave",           # how the keys change colour over the cable: none, fade,
+    "transition_time": 1.0,         #   wave or explode; seconds
     "lcd_clock": True,              # sync the LCD clock on every wired apply
     "theme_overrides": {},
 }
@@ -85,6 +88,11 @@ def load_config(path: Path = CONFIG_FILE) -> dict:
             config["default_brightness"] = min(max(int(lighting["default_brightness"]), 1), 5)
         if "speed" in lighting:
             config["speed"] = min(max(int(lighting["speed"]), 0), 5)
+        if "transition" in lighting:
+            style = str(lighting["transition"]).strip().lower()
+            config["transition"] = style if style in STYLES else "wave"
+        if "transition_time" in lighting:
+            config["transition_time"] = min(max(float(lighting["transition_time"]), 0.2), 5.0)
         if "direction" in lighting:
             config["direction"] = 1 if int(lighting["direction"]) else 0
         if "clock" in lcd:
@@ -148,18 +156,35 @@ def effect_override() -> dict:
         chosen["effect"] = data["effect"]
     if isinstance(data.get("speed"), int) and 0 <= data["speed"] <= 5:
         chosen["speed"] = data["speed"]
+    if data.get("transition") in STYLES:
+        chosen["transition"] = data["transition"]
     return chosen
 
 
+def save_transition(style: str) -> None:
+    """Store the widget's transition style, keeping its effect choice."""
+    data = _read_json(EFFECT_FILE)
+    data = data if isinstance(data, dict) else {}
+    data["transition"] = style
+    _write_json(EFFECT_FILE, data)
+
+
 def save_effect(name: str | None, speed: int | None = None) -> None:
-    """Store the widget's effect (and speed), or None to go back to the config."""
+    """Store the widget's effect (and speed), or None to go back to the config. The
+    transition choice is kept either way."""
+    old = effect_override()
     if name is None:
-        EFFECT_FILE.unlink(missing_ok=True)
+        if "transition" in old:
+            _write_json(EFFECT_FILE, {"transition": old["transition"]})
+        else:
+            EFFECT_FILE.unlink(missing_ok=True)
         return
     data = {"effect": name}
+    if "transition" in old:
+        data["transition"] = old["transition"]
     if speed is not None:
         data["speed"] = min(max(int(speed), 0), 5)
-    elif "speed" in (old := effect_override()):
+    elif "speed" in old:
         data["speed"] = old["speed"]           # changing the effect keeps the chosen speed
     _write_json(EFFECT_FILE, data)
 

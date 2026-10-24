@@ -61,3 +61,14 @@ class EffectOverride(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TransitionSetting(EffectOverride):
+    def test_default_is_wave(self):
+        self.assertEqual(load_config()["transition"], "wave")
+
+    def test_widget_choice_survives_effect_changes(self):
+        cfg.save_transition("explode")
+        cfg.save_effect("breath", 2)
+        cfg.save_effect(None)
+        self.assertEqual(load_config()["transition"], "explode")

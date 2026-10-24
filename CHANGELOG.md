@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-24 (v2, transitions)
+- Colour changes over the cable animate: a wave from left to right by default, or a fade or
+  a burst from the middle (`[lighting] transition`, `transition_time`, or the widget). The
+  new effect is set at live-frame pacing between the first frame and the animation, so
+  neither end flashes; the keys still go dark for a moment as the animation starts.
+
 ## 2026-10-24 (v2, dependencies)
 - Music needs cava now; the built-in numpy/soundcard analyser and `f75ctl music --source`
   are removed (`soundcard` isn't packaged for Arch, and cava is cheaper and smoother).
