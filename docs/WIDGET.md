@@ -49,6 +49,11 @@ No polling. The widget refreshes when it loads, when the panel opens, after each
 action, and a moment after the shell's theme accent changes (long enough for the
 keyboard hook to finish). The battery is read only when the panel opens over 2.4G.
 
+The widget shows what was last sent, not changes made with the keyboard's own Fn keys
+(colour, effect, speed): the keyboard doesn't report them, and reading the keys back is
+slow and can't name an effect (docs/HANDBOOK.md §5.3). A brightness set with Fn+Up/Down
+shows after the next apply over the cable.
+
 ## Files
 
 - `KeyboardAccent.qml`: the bar icon and the panel.

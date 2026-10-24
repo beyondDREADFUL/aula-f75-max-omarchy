@@ -5,7 +5,7 @@ and how the accent controller and `f75ctl` use it.
 
 - Keyboard: AULA F75 Max, wired `0c45:800a` and 2.4 GHz dongle `05ac:024f`
 - Platform: Omarchy on Arch (Hyprland), Linux hidraw
-- Last verified: 2026-10-23, cable and dongle, on the reference keyboard
+- Last verified: 2026-10-24, cable and dongle, on the reference keyboard
 
 Every protocol statement is marked by how it was established:
 
@@ -241,6 +241,41 @@ as that value (within 12). This keeps a level set with the keyboard's own keys
 effect dims the keys part of the time, which read as level 1 (**read**). If the keys are not uniform,
 or nothing fits, the stored level is used. The dongle has no read-back; it reuses the
 stored level.
+
+### 5.3 Changes made with the keyboard's Fn keys
+
+Fn+Tab (colour), Fn+* (effect, Danish layout), Fn+Up/Down (brightness) and Fn+Left/Right
+(speed) change the lighting on the keyboard itself. Tested 2026-10-24 to let the widget
+follow them; the feature was built, tried and removed again (below).
+
+- **The keyboard reports nothing.** Listening on every cable interface (0-3) and, as
+  root, every dongle interface (0-4) while pressing each combination gave no report except
+  ordinary key reports (**read**). Over 2.4G the only vendor report was `05 a6 ff 01` on
+  dongle interface 2 around unplugging the cable. A listener can't help.
+- **The LED table is what the keys show at that moment**, not the stored settings
+  (**read**). Three reads 0.15-0.25 s apart tell:
+  - a static colour: uniform and unchanged, colour and level exact through §5.1;
+  - a still rainbow: unchanged but not uniform;
+  - an animated effect: values change between reads. A rainbow reaches the full value of
+    its level in every read (`c6` green/blue = level 4, `a6` = 3, `5f` = 2), a single-colour
+    effect gives its hue but its level only by chance;
+  - dark: off, or a reactive effect such as single-on while no key is pressed.
+  Which effect runs and its speed are not in the table.
+- **Fn+Tab in static mode** steps through `ff0000, ff8000, ffff00, 00ff00, 00ffff,
+  0000ff, ff0080, ffffff`, a still rainbow, then red again (**read** + **seen**; `ffff00`
+  looks light green). In an animated rainbow effect it makes the effect single-coloured.
+- A table read right after a Fn key was once rejected (`04 02` answered `00 ff`); a retry
+  after 0.5 s works (**read**).
+- The dongle has no read-back (§8), so over 2.4G nothing about a Fn change can be learnt.
+- No "read settings" command was probed: unknown commands on this Sonix firmware may write
+  flash or enter the bootloader, for no more than an effect name.
+
+Removed: the widget read the keys when its panel opened and showed `FN KEYS` with the
+colour, "animated" or "dark", and an apply kept the level of a rainbow effect. The reads
+take about 0.9 s, so the panel showed the old state first, and "animated" without a name
+or speed was judged too vague to be worth it. What stays is §5.2: a theme change sets the
+theme colour again and keeps a level set with Fn+Up/Down when the keys showed a static
+colour.
 
 ---
 

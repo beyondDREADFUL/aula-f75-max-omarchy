@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-24 (v2, Fn-key changes investigated)
+- Documented what the keyboard reveals about changes made with its own Fn keys
+  (docs/HANDBOOK.md §5.3): no report on any cable or dongle interface; over the cable the
+  LED table shows the current colour and level of a static colour and whether an effect
+  is animated, but not which effect or its speed. A widget that followed these changes was
+  tried and left out (about 0.9 s per read, and animated effects can't be named). The
+  Fn+Tab colours are listed there.
+
 ## 2026-10-24 (v2, transitions)
 - Colour changes over the cable animate: a wave from left to right by default, or a fade or
   a burst from the middle (`[lighting] transition`, `transition_time`, or the widget). The

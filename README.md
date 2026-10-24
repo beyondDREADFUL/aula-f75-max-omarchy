@@ -97,7 +97,7 @@ f75ctl battery                                # 2.4 GHz only
 | Music visualiser | yes | no |
 | Battery level | no | yes |
 
-Over the cable, a brightness set with the keyboard's own keys is read back and kept (while the keys show a static colour); the dongle has no read-back and reuses the last level set here.
+Over the cable, a brightness set with the keyboard's own keys is read back and kept (while the keys show a static colour); the dongle has no read-back and reuses the last level set here. Other changes made with the Fn keys (colour, effect, speed) are not shown in the widget, and the next theme change replaces them: the keyboard doesn't report them, and only part of them can be read back (docs/HANDBOOK.md §5.3).
 
 ## Resources
 
