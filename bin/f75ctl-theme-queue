@@ -9,8 +9,8 @@
 
 set -u
 
-STATE_DIR="$HOME/.local/state/omarchy/keyboard-accent"
-CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
+STATE_DIR="$HOME/.local/state/omarchy/aula-f75"
+F75CTL="$HOME/.local/bin/f75ctl"
 
 mkdir -p "$STATE_DIR" || exit 0
 
@@ -34,7 +34,7 @@ fi
         # keyboard, so the first apply already uses the newest token.
         sleep 0.35
         current="$(cat "$STATE_DIR/request" 2>/dev/null)"
-        "$CONTROLLER" apply
+        "$F75CTL" theme apply
         printf '%s\n' "$current" > "$STATE_DIR/applied" 2>/dev/null || true
 
         # Release before the final check: a request arriving at the exit

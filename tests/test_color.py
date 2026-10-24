@@ -2,8 +2,8 @@
 import colorsys
 import unittest
 
-from accent.color import hexstr, parse_color, vivid
-from accent.config import DEFAULTS
+from theme.color import hexstr, parse_color, vivid
+from theme.config import DEFAULTS
 
 CONFIG = dict(DEFAULTS)
 

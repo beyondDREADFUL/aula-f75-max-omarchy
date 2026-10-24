@@ -1,6 +1,6 @@
-# Keyboard Accent
+# AULA F75 Max
 
-Omarchy bar widget for the AULA F75 Max, built on `omarchy-keyboard-accent` and
+Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 `f75ctl`, from Omarchy's own UI components.
 
 - The bar shows a fixed keyboard icon in the bar's own colour, like the other icons. Left-click opens the panel,
@@ -29,7 +29,7 @@ reconnects; a colour picked while it is on replaces the pin. Switching it off, o
 Reset to theme, releases it.
 
 The effect and speed chosen here are remembered over the config's `[lighting]`
-(`omarchy-keyboard-accent set-effect NAME --speed N`). Music runs `f75ctl music` in
+(`f75ctl theme set-effect NAME --speed N`). Music runs `f75ctl music` in
 the background; switching the background restarts it, and switching it off returns
 the keyboard to the theme colour. With the theme-colour background, a theme change
 moves the background to the new colour at once; the keys take the theme colour when
@@ -38,10 +38,10 @@ music stops.
 ## Keybindings
 
 ```bash
-omarchy-shell beyond.keyboard-accent toggle        # open or close the panel
-omarchy-shell beyond.keyboard-accent brighter      # or dimmer, or brightness 3
-omarchy-shell beyond.keyboard-accent music         # music on or off
-omarchy-shell beyond.keyboard-accent reset         # back to the theme colour
+omarchy-shell beyond.aula-f75 toggle        # open or close the panel
+omarchy-shell beyond.aula-f75 brighter      # or dimmer, or brightness 3
+omarchy-shell beyond.aula-f75 music         # music on or off
+omarchy-shell beyond.aula-f75 reset         # back to the theme colour
 ```
 
 ## How it stays current
@@ -57,8 +57,8 @@ shows after the next apply over the cable.
 
 ## Files
 
-- `KeyboardAccent.qml`: the bar icon and the panel.
-- `bin/keyboard-accent`: helper that wraps the controller and `f75ctl`. Every
+- `AulaF75.qml`: the bar icon and the panel.
+- `bin/aula-f75`: helper that wraps the controller and `f75ctl`. Every
   command prints one line of JSON: `status`, `palette`, `targets`, `preview`,
   `apply`, `reset`, `effect`, `brightness`, `battery`, `music start|stop`.
 - `manifest.json`: plugin manifest.

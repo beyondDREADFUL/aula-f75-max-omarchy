@@ -1,5 +1,5 @@
 #!/bin/bash
-# Helper for the Keyboard Accent bar widget. Wraps omarchy-keyboard-accent.
+# Helper for the AULA F75 Max bar widget. Wraps `f75ctl theme` and `f75ctl`.
 # Every command prints one line of JSON, so the widget needs no exit codes.
 #
 #   status                              theme, keyboard colour, match, pin, effect, speed,
@@ -25,9 +25,9 @@
 
 set -u
 
-CONTROLLER="$HOME/.local/bin/omarchy-keyboard-accent"
 F75CTL="$HOME/.local/bin/f75ctl"
-STATE_DIR="$HOME/.local/state/omarchy/keyboard-accent"
+controller() { "$F75CTL" theme "$@"; }
+STATE_DIR="$HOME/.local/state/omarchy/aula-f75"
 STATE="$STATE_DIR/state.json"
 PIN="$STATE_DIR/pin.json"
 MUSIC_PID="$STATE_DIR/music.pid"
@@ -61,7 +61,7 @@ hex_distance() {
 
 # What the keys would show for a colour, via the controller's dry run.
 dry_target() {
-    "$CONTROLLER" apply --dry-run ${exact[@]+"${exact[@]}"} --color "$1" 2>/dev/null \
+    controller apply --dry-run ${exact[@]+"${exact[@]}"} --color "$1" 2>/dev/null \
         | grep -oE 'target=#[0-9A-Fa-f]{6}' | head -n 1 | cut -d= -f2
 }
 
@@ -79,13 +79,13 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ ! -x "$CONTROLLER" ]; then
-    fail "Controller missing: run install.sh (see README)"
+if [ ! -x "$F75CTL" ]; then
+    fail "f75ctl is not installed: run install.sh (see README)"
 fi
 
 case "$command" in
 status)
-    status=$("$CONTROLLER" status 2>/dev/null)
+    status=$(controller status 2>/dev/null)
     theme=$(awk '/^target:/ {print $2}' <<<"$status")
     effect=$(awk '/^effect:/ {print $2}' <<<"$status")
     speed=$(awk '/^speed:/ {print $2}' <<<"$status")
@@ -147,19 +147,19 @@ preview)
 apply)
     valid_hex "${1:-}" || fail "invalid colour"
     pin_args=()
-    if $pin; then pin_args=(--pin); else "$CONTROLLER" unpin 2>/dev/null; fi
-    "$CONTROLLER" apply ${exact[@]+"${exact[@]}"} ${pin_args[@]+"${pin_args[@]}"} --color "$1" >/dev/null 2>&1 || fail "keyboard apply failed"
+    if $pin; then pin_args=(--pin); else controller unpin 2>/dev/null; fi
+    controller apply ${exact[@]+"${exact[@]}"} ${pin_args[@]+"${pin_args[@]}"} --color "$1" >/dev/null 2>&1 || fail "keyboard apply failed"
     jq -nc '{ok: true}'
     ;;
 
 reset)
-    "$CONTROLLER" unpin 2>/dev/null
-    "$CONTROLLER" apply >/dev/null 2>&1 || fail "keyboard apply failed"
+    controller unpin 2>/dev/null
+    controller apply >/dev/null 2>&1 || fail "keyboard apply failed"
     jq -nc '{ok: true}'
     ;;
 
 palette)
-    "$CONTROLLER" palette 2>/dev/null \
+    controller palette 2>/dev/null \
         | jq -R -nc '{ok: true, colors: [inputs | split(" ") | {source: .[0], target: .[1]}]}' \
         || fail "could not read the theme colours"
     ;;
@@ -168,25 +168,25 @@ effect)
     [ -n "${1:-}" ] || fail "no effect given"
     speed_args=()
     [ -n "${2:-}" ] && speed_args=(--speed "$2")
-    "$CONTROLLER" set-effect "$1" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
+    controller set-effect "$1" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
         || fail "could not set effect $1"
     jq -nc '{ok: true}'
     ;;
 
 transition)
     [[ ${1:-} =~ ^(none|fade|wave|explode)$ ]] || fail "transition must be none, fade, wave or explode"
-    "$CONTROLLER" set-transition "$1" >/dev/null 2>&1 || fail "could not set the transition"
+    controller set-transition "$1" >/dev/null 2>&1 || fail "could not set the transition"
     jq -nc '{ok: true}'
     ;;
 
 brightness)
     [[ ${1:-} =~ ^[1-5]$ ]] || fail "brightness must be 1-5"
-    "$CONTROLLER" set-brightness "$1" >/dev/null 2>&1 || fail "could not set brightness"
+    controller set-brightness "$1" >/dev/null 2>&1 || fail "could not set brightness"
     jq -nc '{ok: true}'
     ;;
 
 battery)
-    devices=$("$CONTROLLER" status 2>/dev/null | awk '/^devices:/ {print $2}')
+    devices=$(controller status 2>/dev/null | awk '/^devices:/ {print $2}')
     [ "$devices" = "wireless" ] || fail "battery is only reported over the 2.4 GHz dongle"
     percent=$("$F75CTL" battery 2>/dev/null | grep -oE '[0-9]+') || fail "no battery reading"
     jq -nc --argjson percent "$percent" '{ok: true, percent: $percent}'
@@ -234,7 +234,7 @@ music)
     ;;
 
 *)
-    echo "usage: keyboard-accent status|palette|targets|preview|apply|reset|effect|transition|brightness|battery|music" >&2
+    echo "usage: aula-f75 status|palette|targets|preview|apply|reset|effect|transition|brightness|battery|music" >&2
     exit 2
     ;;
 esac

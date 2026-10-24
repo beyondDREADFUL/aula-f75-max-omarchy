@@ -6,7 +6,7 @@ from pathlib import Path
 
 # the packages sit next to bin/ in the repository, or where install.sh puts them
 for lib in (Path(__file__).resolve().parent.parent,
-            Path.home() / ".local/share/omarchy-keyboard-accent"):
+            Path.home() / ".local/share/aula-f75"):
     if (lib / "aula_f75").is_dir():
         sys.path.insert(0, str(lib))
         break

@@ -14,12 +14,12 @@ from aula_f75.transition import STYLES
 HOME = Path.home()
 THEME_DIR = HOME / ".local/state/omarchy/current/theme"
 THEME_NAME_FILE = HOME / ".local/state/omarchy/current/theme.name"
-CONFIG_FILE = HOME / ".config/omarchy/keyboard-accent/config.toml"
-STATE_DIR = HOME / ".local/state/omarchy/keyboard-accent"
+CONFIG_FILE = HOME / ".config/omarchy/aula-f75/config.toml"
+STATE_DIR = HOME / ".local/state/omarchy/aula-f75"
 STATE_FILE = STATE_DIR / "state.json"
 PIN_FILE = STATE_DIR / "pin.json"
 EFFECT_FILE = STATE_DIR / "effect.json"
-LOG_FILE = STATE_DIR / "keyboard-accent.log"
+LOG_FILE = STATE_DIR / "theme.log"
 
 DEFAULTS = {
     "color_mode": "theme",          # or "fixed"

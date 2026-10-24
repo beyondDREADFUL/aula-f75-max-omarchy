@@ -2,15 +2,15 @@
 # command interface 03 (usage page 0xFF13) and the LCD image interface 02 (0xFF68).
 # The keyboard's input interfaces are not touched. Runs after 60-persistent-hidraw.rules,
 # so the ID_* properties are set. Interface 03 appearing starts a one-shot apply.
-ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", ENV{ID_USB_INTERFACE_NUM}=="03", GROUP="aula", MODE="0660", TAG+="uaccess", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", ENV{ID_USB_INTERFACE_NUM}=="03", GROUP="aula", MODE="0660", TAG+="uaccess", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-f75.service"
 ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", ENV{ID_USB_INTERFACE_NUM}=="02", GROUP="aula", MODE="0660", TAG+="uaccess"
 
 # The 2.4 GHz dongle. Its command channel is interface 03 (usage page 0xFF60); the
 # others are keyboard, mouse and consumer endpoints. Duplicate service starts are
 # harmless: applies take the shared keyboard lock.
-ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="024f", ENV{ID_USB_INTERFACE_NUM}=="03", GROUP="aula", MODE="0660", TAG+="uaccess", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="024f", ENV{ID_USB_INTERFACE_NUM}=="03", GROUP="aula", MODE="0660", TAG+="uaccess", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-f75.service"
 
 # When one transport disappears, apply again so the other one (for example the dongle
 # after the cable is unplugged) gets the theme. Event-driven, no polling.
-ACTION=="remove", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
-ACTION=="remove", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="024f", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-keyboard-accent.service"
+ACTION=="remove", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="0c45", ENV{ID_MODEL_ID}=="800a", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-f75.service"
+ACTION=="remove", SUBSYSTEM=="hidraw", ENV{ID_VENDOR_ID}=="05ac", ENV{ID_MODEL_ID}=="024f", TAG+="systemd", ENV{SYSTEMD_WANTS}+="aula-f75.service"

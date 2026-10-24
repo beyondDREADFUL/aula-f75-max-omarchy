@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from accent import config as cfg
-from accent.controller import music_following_theme
+from theme import config as cfg
+from theme.controller import music_following_theme
 from aula_f75 import music
 
 

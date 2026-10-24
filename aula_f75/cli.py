@@ -86,7 +86,7 @@ def cmd_music(kb, a):
     if a.background == "theme":
         # the accent controller's colour (theme, override or pin); SIGHUP reads it again,
         # which the controller sends when the theme changes while music holds the keyboard
-        from accent.controller import current_target
+        from theme.controller import current_target
 
         def reload(opts):
             try:
@@ -107,8 +107,8 @@ def cmd_music(kb, a):
     if a.after == "theme":
         # hand the keyboard back to the theme accent (also applies a theme change that was
         # deferred while music held the keyboard)
-        from accent.controller import main as accent
-        accent(["apply"])
+        from theme.controller import main as theme
+        theme(["apply"])
     else:
         with open_keyboard() as kb2:
             kb2.light(lighting.Effect(a.after))
@@ -132,6 +132,8 @@ def build_parser():
     p.add_argument("--dongle", action="store_true",
                    help="use the 2.4G dongle even when the cable is connected")
     sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("theme", help="follow the Omarchy theme accent: apply, status, unpin, "
+                   "set-effect, ... (see `f75ctl theme -h`)")
 
     s = sub.add_parser("light", help="set a lighting effect")
     s.add_argument("mode", choices=lighting.MODES)
@@ -194,6 +196,11 @@ def build_parser():
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["theme"]:
+        # the Omarchy theme integration has its own commands (theme/controller.py)
+        from theme.controller import main as theme
+        return theme(argv[1:])
     a = build_parser().parse_args(argv)
     if a.fn is None:
         print(" ".join(KEYS))

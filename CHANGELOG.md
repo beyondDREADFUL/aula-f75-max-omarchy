@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-24 (rename)
+- The project is now **aula-f75-max-omarchy** (repository renamed). Everything follows the
+  name `aula-f75`: `omarchy-keyboard-accent ...` is `f75ctl theme ...`, the hook queue is
+  `f75ctl-theme-queue`, the widget is `beyond.aula-f75` ("AULA F75 Max", `AulaF75.qml`,
+  helper `bin/aula-f75`), the libraries live in `~/.local/share/aula-f75`, config and
+  state in `~/.config/omarchy/aula-f75` and `~/.local/state/omarchy/aula-f75`, the service
+  is `aula-f75.service`, and the Python package is `theme/`.
+- `install.sh` moves an existing install: config and state (theme colours, pin, effect),
+  the widget's place in the bar, and removes the old commands, hooks, plugin and service.
+
 ## 2026-10-24 (v2, music follows the theme)
 - With the widget's theme-colour background, a theme change while music runs moves the
   background to the new theme colour within a frame, instead of waiting for music to stop.

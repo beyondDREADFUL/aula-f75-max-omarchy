@@ -10,12 +10,12 @@ import qs.Ui
 // returns the keyboard to the theme colour.
 //
 // Every choice applies at once, except the hex field, which waits for Apply. All
-// keyboard access goes through bin/keyboard-accent, which prints one line of JSON per
+// keyboard access goes through bin/aula-f75, which prints one line of JSON per
 // command; commands run one at a time from a queue.
 Panel {
   id: root
 
-  moduleName: "beyond.keyboard-accent"
+  moduleName: "beyond.aula-f75"
   ipcTarget: moduleName
   manageIpc: false
 
@@ -40,7 +40,7 @@ Panel {
   property string message: ""
   property bool failed: false
 
-  readonly property string helperPath: String(Qt.resolvedUrl("bin/keyboard-accent")).replace(/^file:\/\//, "")
+  readonly property string helperPath: String(Qt.resolvedUrl("bin/aula-f75")).replace(/^file:\/\//, "")
   readonly property var brights: ["#FF0000", "#FF8000", "#FFD000", "#00C853", "#00A0FF", "#8839EF", "#FF2D95"]
   readonly property var effects: ["static", "breath", "pulsating", "glittering", "falling",
     "single-on", "single-off", "ripples", "outward", "explode", "launch", "scrolling", "rolling",
@@ -397,7 +397,7 @@ Panel {
 
           Text {
             id: titleText
-            text: "Keyboard Accent"
+            text: "AULA F75 Max"
             color: root.fg
             font.family: root.family
             font.pixelSize: Style.font.title

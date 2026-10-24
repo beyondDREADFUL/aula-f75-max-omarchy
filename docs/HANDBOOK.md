@@ -25,10 +25,10 @@ calibration (§5) and timing (§3.4).
 
 ```
 theme change ──> hooks/theme-set.d ──┐
-login        ──> hooks/post-boot.d ──┼─> omarchy-keyboard-accent-queue (debounce)
+login        ──> hooks/post-boot.d ──┼─> f75ctl-theme-queue (debounce)
 plug/unplug  ──> udev ─> systemd ────┘            │
                                                   ▼
-bar widget ──> bin/keyboard-accent ──> omarchy-keyboard-accent apply   (accent/)
+bar widget ──> bin/aula-f75 ──> f75ctl theme apply     (theme/)
                                                   │
 you ──> f75ctl light|keycolors|remap|music|... ───┤                    (aula_f75/cli.py)
                                                   ▼
@@ -40,9 +40,9 @@ you ──> f75ctl light|keycolors|remap|music|... ───┤                 
 | Part | Role |
 |---|---|
 | `aula_f75/` | Protocol library, standard library only. `hidraw.py` (find nodes, ioctls), `device.py` (cable and dongle behind one interface, the lock), `layout.py`, `lighting.py`, `keymap.py`, `lcd.py`, `music.py`, `cli.py` (`f75ctl`) |
-| `accent/` | Theme accent to keyboard: `color.py` (colour choice), `config.py` (config, state, pin, theme), `controller.py` (the `omarchy-keyboard-accent` command) |
-| `bin/` | Thin entry points: `omarchy-keyboard-accent`, `omarchy-keyboard-accent-queue`, `f75ctl`, `keyboard-accent` (widget helper) |
-| `KeyboardAccent.qml`, `manifest.json` | Bar widget (docs/WIDGET.md) |
+| `theme/` | Theme accent to keyboard: `color.py` (colour choice), `config.py` (config, state, pin, theme), `controller.py` (the `f75ctl theme` command) |
+| `bin/` | Thin entry points: `f75ctl` (with `f75ctl theme`), `f75ctl-theme-queue` (hooks), `aula-f75` (widget helper) |
+| `AulaF75.qml`, `manifest.json` | Bar widget (docs/WIDGET.md) |
 | `hooks/`, `system/` | Omarchy hooks, udev rule, one-shot systemd unit |
 
 Nothing runs in the background. The theme hook, login hook and udev events each start one
@@ -393,12 +393,12 @@ soft white that keeps their hue (warm if none); lightness is held in
 
 | Path | Content |
 |---|---|
-| `~/.config/omarchy/keyboard-accent/config.toml` | config (`config.example.toml` documents every key); never overwritten by install |
-| `~/.local/state/omarchy/keyboard-accent/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
+| `~/.config/omarchy/aula-f75/config.toml` | config (`config.example.toml` documents every key); never overwritten by install |
+| `~/.local/state/omarchy/aula-f75/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
 | `.../pin.json` | pinned colour, if any |
 | `.../effect.json` | effect and speed chosen in the widget (override `[lighting]`) |
 | `.../music.pid`, `music.log`, `music.background` | the visualiser started from the widget, and its background (`off` or `theme`) |
-| `.../keyboard-accent.log` | one line per apply |
+| `.../theme.log` | one line per apply |
 | `$XDG_RUNTIME_DIR/aula-f75.lock` | the keyboard lock |
 
 ---
@@ -406,11 +406,11 @@ soft white that keeps their hue (warm if none); lightness is held in
 ## 11. Commands
 
 ```bash
-omarchy-keyboard-accent apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
-omarchy-keyboard-accent unpin | status [--read-table] | read | set-brightness N
-omarchy-keyboard-accent set-effect NAME|default [--speed N]   widget's effect, over the config's
-omarchy-keyboard-accent set-transition none|fade|wave|explode
-omarchy-keyboard-accent palette    the theme's colours as the keys would show them
+f75ctl theme apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
+f75ctl theme unpin | status [--read-table] | read | set-brightness N
+f75ctl theme set-effect NAME|default [--speed N]   widget's effect, over the config's
+f75ctl theme set-transition none|fade|wave|explode
+f75ctl theme palette    the theme's colours as the keys would show them
 
 f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
@@ -429,7 +429,7 @@ missing.
 
 ## 12. Install, access and verification
 
-`install.sh` copies `aula_f75/` and `accent/` to `~/.local/share/omarchy-keyboard-accent/`,
+`install.sh` copies `aula_f75/` and `theme/` to `~/.local/share/aula-f75/`,
 the commands to `~/.local/bin`, the hooks and the widget; with sudo it adds the `aula`
 group, the udev rule (cable interfaces 2 and 3, dongle interface 3) and the one-shot unit.
 `uninstall.sh` removes all of it (`--purge` also config and state).
@@ -438,7 +438,7 @@ Checks:
 
 ```bash
 python3 -m unittest discover tests          # packets, calibration, colour choice
-omarchy-keyboard-accent apply --verify      # cable: keys match the expected stored colour
+f75ctl theme apply --verify      # cable: keys match the expected stored colour
 f75ctl --dry-run light static -c 00ff00     # see the packets
 f75ctl music --test --seconds 5             # bars must move the whole time
 ```
@@ -449,7 +449,7 @@ f75ctl music --test --seconds 5             # bars must move the whole time
 
 | Symptom | Check |
 |---|---|
-| nothing happens on theme change | `tail ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log`; `result=deferred` means another program held the keyboard |
+| nothing happens on theme change | `tail ~/.local/state/omarchy/aula-f75/theme.log`; `result=deferred` means another program held the keyboard |
 | `keyboard not found` | `lsusb | grep -iE '0c45:800a|05ac:024f'`; the cable must carry data |
 | permission denied | `id | grep aula` (log in again after install); `ls -l /dev/hidraw*` |
 | `keyboard rejected 04 ..` | close any other program using the keyboard (the vendor app on Windows polls constantly) |

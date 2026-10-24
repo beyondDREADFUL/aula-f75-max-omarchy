@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "beyond.keyboard-accent",
-  "name": "Keyboard Accent",
+  "id": "beyond.aula-f75",
+  "name": "AULA F75 Max",
   "version": "2.0.0",
   "author": "beyond",
   "license": "MIT",
@@ -10,10 +10,10 @@
     "bar-widget"
   ],
   "entryPoints": {
-    "barWidget": "KeyboardAccent.qml"
+    "barWidget": "AulaF75.qml"
   },
   "barWidget": {
-    "displayName": "Keyboard Accent",
+    "displayName": "AULA F75 Max",
     "description": "Keyboard icon that opens a panel to set the AULA F75 Max colour, brightness, effect and music visualiser",
     "category": "Hardware",
     "allowMultiple": false,

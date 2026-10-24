@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from accent import config as cfg
-from accent.controller import load_config, theme_palette
+from theme import config as cfg
+from theme.controller import load_config, theme_palette
 
 CONFIG = dict(cfg.DEFAULTS)
 

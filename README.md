@@ -32,8 +32,8 @@ cd aula-f75-max-omarchy
 `./install.sh --dry-run` prints the root commands without running them. Log out and back in once so the `aula` group applies, then:
 
 ```bash
-omarchy-keyboard-accent apply
-omarchy plugin enable beyond.keyboard-accent && omarchy restart shell
+f75ctl theme apply
+omarchy plugin enable beyond.aula-f75 && omarchy restart shell
 ```
 
 ## The widget
@@ -51,23 +51,23 @@ A keyboard icon in the bar. Left-click opens the panel, right-click returns the 
 Commands to bind to keys (for example with `bindd` in `~/.config/hypr/bindings.conf`):
 
 ```bash
-omarchy-shell beyond.keyboard-accent toggle     # open or close the panel
-omarchy-shell beyond.keyboard-accent brighter   # or dimmer, or brightness 3
-omarchy-shell beyond.keyboard-accent music      # music on or off
-omarchy-shell beyond.keyboard-accent reset      # back to the theme colour
+omarchy-shell beyond.aula-f75 toggle     # open or close the panel
+omarchy-shell beyond.aula-f75 brighter   # or dimmer, or brightness 3
+omarchy-shell beyond.aula-f75 music      # music on or off
+omarchy-shell beyond.aula-f75 reset      # back to the theme colour
 ```
 
 More in [docs/WIDGET.md](docs/WIDGET.md).
 
 ## The theme accent
 
-On every theme change the keyboard takes the theme's accent. Saturated accents are kept; muted ones keep their hue with more saturation; grey and pale ones become a soft white. To choose the colour for a theme yourself, add it under `[theme_overrides]` in `~/.config/omarchy/keyboard-accent/config.toml`; [config.example.toml](config.example.toml) has the bundled themes and documents every setting, including showing the accent as an effect (`[lighting] effect = "breath"`) and syncing the LCD clock.
+On every theme change the keyboard takes the theme's accent. Saturated accents are kept; muted ones keep their hue with more saturation; grey and pale ones become a soft white. To choose the colour for a theme yourself, add it under `[theme_overrides]` in `~/.config/omarchy/aula-f75/config.toml`; [config.example.toml](config.example.toml) has the bundled themes and documents every setting, including showing the accent as an effect (`[lighting] effect = "breath"`) and syncing the LCD clock.
 
 ```bash
-omarchy-keyboard-accent status
-omarchy-keyboard-accent apply --color '#FF0000'          # until the next theme change
-omarchy-keyboard-accent apply --pin --color '#FF0000'    # keep it across theme changes
-omarchy-keyboard-accent unpin && omarchy-keyboard-accent apply   # back to the theme colour
+f75ctl theme status
+f75ctl theme apply --color '#FF0000'          # until the next theme change
+f75ctl theme apply --pin --color '#FF0000'    # keep it across theme changes
+f75ctl theme unpin && f75ctl theme apply   # back to the theme colour
 ```
 
 ## f75ctl
@@ -111,15 +111,17 @@ Over the cable, a brightness set with the keyboard's own keys is read back and k
 
 | Symptom | Check |
 |---|---|
-| The keyboard doesn't follow the theme | `tail ~/.local/state/omarchy/keyboard-accent/keyboard-accent.log`; `result=deferred` means music or `f75ctl` held the keyboard |
+| The keyboard doesn't follow the theme | `tail ~/.local/state/omarchy/aula-f75/theme.log`; `result=deferred` means music or `f75ctl` held the keyboard |
 | `keyboard not found` | `lsusb \| grep -iE '0c45:800a\|05ac:024f'`; the USB cable must carry data |
 | `permission denied` | `id \| grep aula`; log out and back in after installing |
 
 More in [docs/HANDBOOK.md](docs/HANDBOOK.md) §13.
 
-## Upgrading from v1
+## Upgrading
 
-Run `./install.sh` again: v2 installs its libraries to `~/.local/share/omarchy-keyboard-accent`. Your `config.toml` keeps working; `underglow_correction`, `match_direct_zone` and `wireless_color_order` are ignored now. Colours from `[theme_overrides]` are unchanged; accents without an override can look slightly different, because v1 lowered green and blue to correct an underglow the keyboard doesn't have ([docs/HANDBOOK.md](docs/HANDBOOK.md) §14).
+**From the `omarchy-keyboard-accent` names** (before 2026-10-24): run `./install.sh` again. It moves your config and state to `~/.config/omarchy/aula-f75` and `~/.local/state/omarchy/aula-f75`, keeps the widget in its place in the bar under its new id `beyond.aula-f75`, and removes the old commands, hooks, plugin and service. `omarchy-keyboard-accent ...` is now `f75ctl theme ...`; keybindings that call `omarchy-shell beyond.keyboard-accent ...` need the new id.
+
+**From v1:** run `./install.sh` again: it installs its libraries to `~/.local/share/aula-f75`. Your `config.toml` keeps working; `underglow_correction`, `match_direct_zone` and `wireless_color_order` are ignored now. Colours from `[theme_overrides]` are unchanged; accents without an override can look slightly different, because v1 lowered green and blue to correct an underglow the keyboard doesn't have ([docs/HANDBOOK.md](docs/HANDBOOK.md) §14).
 
 ## Uninstall
 
@@ -137,14 +139,14 @@ Theme changes and logins run an Omarchy hook, and plugging in the cable or dongl
 
 | Path | Installs to | Purpose |
 |---|---|---|
-| `aula_f75/` | `~/.local/share/omarchy-keyboard-accent` | Protocol library (Python standard library only) |
-| `accent/`, `bin/omarchy-keyboard-accent` | same, and `~/.local/bin` | Reads the theme accent and sets the keyboard |
-| `bin/omarchy-keyboard-accent-queue` | `~/.local/bin` | Debounced dispatch so theme switching never blocks |
-| `bin/f75ctl` | `~/.local/bin` | The command line |
-| `hooks/keyboard-accent.sh` | `~/.config/omarchy/hooks/{theme-set.d,post-boot.d}` | Runs the queue on theme change and at login |
+| `aula_f75/` | `~/.local/share/aula-f75` | Protocol library (Python standard library only) |
+| `theme/` | `~/.local/share/aula-f75` | `f75ctl theme`: reads the theme accent and sets the keyboard |
+| `bin/f75ctl-theme-queue` | `~/.local/bin` | Debounced dispatch so theme switching never blocks |
+| `bin/f75ctl` | `~/.local/bin` | The command line, including `f75ctl theme` |
+| `hooks/aula-f75.sh` | `~/.config/omarchy/hooks/{theme-set.d,post-boot.d}` | Runs the queue on theme change and at login |
 | `system/` | `/etc/udev/rules.d`, `/etc/systemd/system` | Access to the keyboard and an apply on plug/unplug |
-| `config.example.toml` | `~/.config/omarchy/keyboard-accent/config.toml` | Settings; never overwritten |
-| `manifest.json`, `KeyboardAccent.qml`, `bin/keyboard-accent` | `~/.config/omarchy/plugins/beyond.keyboard-accent` | The bar widget |
+| `config.example.toml` | `~/.config/omarchy/aula-f75/config.toml` | Settings; never overwritten |
+| `manifest.json`, `AulaF75.qml`, `bin/aula-f75` | `~/.config/omarchy/plugins/beyond.aula-f75` | The bar widget |
 
 ## Tests
 
@@ -152,7 +154,7 @@ Theme changes and logins run an Omarchy hook, and plugging in the cable or dongl
 python3 -m unittest discover tests
 ```
 
-Covers the packet builders against bytes verified on the keyboard, the calibration model against read-back values, the colour choice and the widget's palette and effect settings. `omarchy-keyboard-accent apply --verify` checks the keys on the hardware.
+Covers the packet builders against bytes verified on the keyboard, the calibration model against read-back values, the colour choice and the widget's palette and effect settings. `f75ctl theme apply --verify` checks the keys on the hardware.
 
 ## License
 

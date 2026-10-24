@@ -1,4 +1,4 @@
-"""The omarchy-keyboard-accent command: apply the theme accent and report state.
+"""`f75ctl theme`: apply the Omarchy theme accent to the keyboard and report state.
 
 Wired apply: read page 0 of the LED table (keys Esc-F12) to learn the brightness the user
 set with the keyboard's own keys, then one effect command in the target colour, then the
@@ -288,7 +288,7 @@ def cmd_status(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="omarchy-keyboard-accent",
+    p = argparse.ArgumentParser(prog="f75ctl theme",
                                 description="Follow the active Omarchy theme on an AULA F75 Max.")
     sub = p.add_subparsers(dest="command", required=True)
     a = sub.add_parser("apply", help="apply the current theme colour")
