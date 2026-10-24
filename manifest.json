@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "beyond.keyboard-accent",
   "name": "Keyboard Accent",
-  "version": "0.2.0",
+  "version": "2.0.0",
   "author": "beyond",
   "license": "MIT",
-  "description": "Shows the keyboard's current accent colour, lets you pick another, and shows whether it matches the theme",
+  "description": "Control the AULA F75 Max keyboard: theme accent colour, brightness, effects and a music visualiser",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Keyboard Accent",
-    "description": "Swatch of the keyboard accent colour with a picker that matches it against the current theme",
+    "description": "Keyboard icon that opens a panel to set the AULA F75 Max colour, brightness, effect and music visualiser",
     "category": "Hardware",
     "allowMultiple": false,
     "defaultSection": "right",
