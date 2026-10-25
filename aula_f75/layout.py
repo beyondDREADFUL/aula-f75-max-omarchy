@@ -53,9 +53,14 @@ POS = {
 }
 
 
+class UnknownKey(KeyError):
+    def __str__(self):          # KeyError would print the message in quotes
+        return str(self.args[0])
+
+
 def key(name: str) -> str:
-    """Normalize a key name; raises KeyError for unknown names."""
+    """Normalize a key name; raises UnknownKey (a KeyError) for unknown names."""
     name = ALIASES.get(name.lower(), name.lower())
     if name not in KEYS:
-        raise KeyError(f"unknown key {name!r}")
+        raise UnknownKey(f"unknown key {name!r}")
     return name
