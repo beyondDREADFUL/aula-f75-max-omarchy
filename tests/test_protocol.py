@@ -119,8 +119,9 @@ class Tables(unittest.TestCase):
         self.assertEqual(len(blob) % 64, 0)
 
     def test_unknown_key(self):
-        with self.assertRaises(KeyError):
+        with self.assertRaises(KeyError) as caught:
             keymap.parse_assignments(["nokey=a"])
+        self.assertEqual(str(caught.exception), "unknown key 'nokey'")
 
 
 class Lcd(unittest.TestCase):

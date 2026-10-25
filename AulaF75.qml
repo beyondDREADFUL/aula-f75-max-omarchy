@@ -37,6 +37,7 @@ Panel {
   property string previewHex: ""      // what the keys would show for the hex field
   property string musicBackground: "off"
   property bool effectsOpen: false    // the effect list is folded out
+  property bool batteryWanted: false  // read the battery once the next status is in
   property string message: ""
   property bool failed: false
 
@@ -163,6 +164,11 @@ Panel {
       root.devices = result.devices || []
       root.musicOn = result.music === true
       if (root.musicOn && result.musicBackground) root.musicBackground = String(result.musicBackground)
+      // the battery check needs the connection this status just reported
+      if (root.batteryWanted) {
+        root.batteryWanted = false
+        root.loadBattery()
+      }
     })
   }
 
@@ -252,9 +258,9 @@ Panel {
 
   onOpenedChanged: {
     if (!opened) return
+    root.batteryWanted = true
     root.refresh()
     root.loadPalette()
-    Qt.callLater(root.loadBattery)
     hexInput.text = ""
     root.previewHex = ""
     root.message = ""

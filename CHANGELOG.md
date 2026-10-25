@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-25 (fixes from a code review)
+- A keyboard that can't be opened (for example no access before the `aula` group applies)
+  no longer ends `f75ctl` or `f75ctl theme` with a traceback: apply logs
+  `result=failed (...)` in `theme.log` and exits 1, the other commands print the error.
+- Unknown key names print without extra quotes: `f75ctl: unknown key 'foo'`.
+- The verbose-log variable is now `AULA_F75_VERBOSE` (was `KEYBOARD_ACCENT_VERBOSE`).
+- The widget reads the battery after the status it opens with, so the first open after
+  switching from the cable to the dongle shows the battery level.
+
 ## 2026-10-24 (rename)
 - The project is now **aula-f75-max-omarchy** (repository renamed). Everything follows the
   name `aula-f75`: `omarchy-keyboard-accent ...` is `f75ctl theme ...`, the hook queue is

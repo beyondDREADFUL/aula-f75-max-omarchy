@@ -210,7 +210,7 @@ def main(argv=None) -> int:
             "wireless" if a.dongle or a.cmd == "battery" else "auto")
         with kb:
             a.fn(kb, a)
-    except (NotFound, Busy, Rejected, Unsupported, KeyError, ValueError,
+    except (NotFound, Busy, Rejected, Unsupported, KeyError, ValueError, OSError,
             music.MusicError) as exc:
         print(f"f75ctl: {exc}", file=sys.stderr)
         return 1

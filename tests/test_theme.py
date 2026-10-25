@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from theme import config as cfg
+from theme import controller
 from theme.controller import load_config, theme_palette
 
 CONFIG = dict(cfg.DEFAULTS)
@@ -30,7 +31,9 @@ class Palette(unittest.TestCase):
         self.assertEqual([s for s, _ in out], ["#B59790", "#C38B7B"])
 
 
-class EffectOverride(unittest.TestCase):
+class StateDir(unittest.TestCase):
+    """Config and state in a temporary directory."""
+
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         state = Path(self.dir.name)
@@ -42,6 +45,8 @@ class EffectOverride(unittest.TestCase):
             self.addCleanup(p.stop)
         self.addCleanup(self.dir.cleanup)
 
+
+class EffectOverride(StateDir):
     def test_effect_and_speed_override_the_config(self):
         cfg.save_effect("breath", 4)
         c = load_config()
@@ -59,11 +64,7 @@ class EffectOverride(unittest.TestCase):
         self.assertEqual((c["effect"], c["speed"], c["effect_source"]), ("static", 3, "config"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
-class TransitionSetting(EffectOverride):
+class TransitionSetting(StateDir):
     def test_default_is_wave(self):
         self.assertEqual(load_config()["transition"], "wave")
 
@@ -72,3 +73,20 @@ class TransitionSetting(EffectOverride):
         cfg.save_effect("breath", 2)
         cfg.save_effect(None)
         self.assertEqual(load_config()["transition"], "explode")
+
+
+class NoAccess(StateDir):
+    def test_apply_logs_a_device_it_cannot_open(self):
+        # before the 'aula' group applies, opening the hidraw node fails
+        log = Path(self.dir.name) / "theme.log"
+        denied = PermissionError(13, "Permission denied", "/dev/hidraw9")
+        with mock.patch.object(cfg, "LOG_FILE", log), \
+                mock.patch.object(cfg, "STATE_FILE", Path(self.dir.name) / "state.json"), \
+                mock.patch.object(cfg, "PIN_FILE", Path(self.dir.name) / "pin.json"), \
+                mock.patch("theme.controller.open_keyboard", side_effect=denied):
+            self.assertEqual(controller.main(["apply", "--color", "#ff0000"]), 1)
+        self.assertIn("result=failed ([Errno 13] Permission denied", log.read_text())
+
+
+if __name__ == "__main__":
+    unittest.main()

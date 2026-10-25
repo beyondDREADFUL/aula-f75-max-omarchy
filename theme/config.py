@@ -53,7 +53,7 @@ def log(message: str) -> None:
             LOG_FILE.write_text("\n".join(kept) + "\n", encoding="utf-8")
     except OSError:
         pass
-    if os.environ.get("KEYBOARD_ACCENT_VERBOSE") or sys.stderr.isatty():
+    if os.environ.get("AULA_F75_VERBOSE") or sys.stderr.isatty():
         print(line, end="", file=sys.stderr)
 
 

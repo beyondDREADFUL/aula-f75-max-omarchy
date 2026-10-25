@@ -163,6 +163,10 @@ def cmd_apply(args) -> int:
         # music mode or f75ctl holds the keyboard; they hand back with `apply` when done
         cfg.log(f"{summary} result=deferred (keyboard busy)")
         return 0
+    except OSError as exc:
+        # e.g. no access to the hidraw node before the 'aula' group applies
+        cfg.log(f"{summary} result=failed ({exc})")
+        return 1
     last = state.get("target_rgb")
     last = tuple(last) if isinstance(last, list) and len(last) == 3 else None
     stored = min(max(int(state.get("brightness", config["default_brightness"])), 1), 5)
@@ -328,6 +332,6 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))
-    except (NotFound, Busy, Rejected) as exc:
+    except (NotFound, Busy, Rejected, OSError) as exc:
         print(exc, file=sys.stderr)
         return 1
