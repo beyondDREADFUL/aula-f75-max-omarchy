@@ -494,7 +494,7 @@ Panel {
         y: -height - Style.space(4)
         width: trigger.width
         padding: Style.space(1)
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
         height: Math.min(column.height, Style.space(240)) + 2 * padding
 
         background: Rectangle {
