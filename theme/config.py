@@ -20,6 +20,7 @@ STATE_FILE = STATE_DIR / "state.json"
 PIN_FILE = STATE_DIR / "pin.json"
 EFFECT_FILE = STATE_DIR / "effect.json"
 LOG_FILE = STATE_DIR / "theme.log"
+DEVICES_FILE = STATE_DIR / "devices"     # connected transports, watched by the bar widget
 
 DEFAULTS = {
     "color_mode": "theme",          # or "fixed"
@@ -32,6 +33,7 @@ DEFAULTS = {
     "effect": "static",             # any lighting mode that takes a colour
     "default_brightness": 5,
     "speed": 3,
+    "rainbow": False,               # widget only: colourful in the firmware's own rainbow
     "direction": 0,
     "transition": "wave",           # how the keys change colour over the cable: none, fade,
     "transition_time": 1.0,         #   wave or explode; seconds
@@ -57,9 +59,10 @@ def log(message: str) -> None:
         print(line, end="", file=sys.stderr)
 
 
-def load_config(path: Path = CONFIG_FILE) -> dict:
+def load_config(path: Path | None = None) -> dict:
     """The config with defaults filled in. Errors are logged, never raised: a bad config
     must not break a theme switch. Keys from v1 that no longer apply are ignored."""
+    path = path or CONFIG_FILE      # looked up at call time, so tests can patch it
     config = dict(DEFAULTS)
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -129,6 +132,22 @@ def save_state(state: dict) -> None:
     _write_json(STATE_FILE, state)
 
 
+def save_devices(transports) -> None:
+    """One line, the sorted transports joined by commas, or "none". Rewritten only when it
+    changes, and atomically, so the widget's file watcher wakes for real changes only."""
+    text = (",".join(sorted(transports)) or "none") + "\n"
+    try:
+        if DEVICES_FILE.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = DEVICES_FILE.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, DEVICES_FILE)
+
+
 def load_pin() -> dict | None:
     """The pinned colour, if any: {"color": "#RRGGBB", "exact": bool}."""
     pin = _read_json(PIN_FILE)
@@ -147,7 +166,7 @@ def clear_pin() -> None:
 
 def effect_override() -> dict:
     """The effect and speed chosen in the widget, which take precedence over [lighting]:
-    {"effect": name, "speed": 0-5}, either key missing when not chosen."""
+    {"effect": name, "speed": 0-5, "rainbow": True}, a key missing when not chosen."""
     data = _read_json(EFFECT_FILE)
     if not isinstance(data, dict):
         return {}
@@ -158,6 +177,9 @@ def effect_override() -> dict:
         chosen["speed"] = data["speed"]
     if data.get("transition") in STYLES:
         chosen["transition"] = data["transition"]
+    # the rainbow is the colourful effect without the theme colour; it means nothing for others
+    if data.get("rainbow") is True and chosen.get("effect") == "colourful":
+        chosen["rainbow"] = True
     return chosen
 
 
@@ -169,9 +191,27 @@ def save_transition(style: str) -> None:
     _write_json(EFFECT_FILE, data)
 
 
-def save_effect(name: str | None, speed: int | None = None) -> None:
+def clear_rainbow() -> None:
+    """Turn the rainbow off and go back to the effect and speed chosen before it."""
+    data = _read_json(EFFECT_FILE)
+    if not isinstance(data, dict) or data.pop("rainbow", None) is None:
+        return
+    before = data.pop("before", None)
+    if isinstance(before, dict):
+        for key in ("effect", "speed"):
+            data.pop(key, None)
+            if key in before:
+                data[key] = before[key]
+    if data:
+        _write_json(EFFECT_FILE, data)
+    else:
+        EFFECT_FILE.unlink(missing_ok=True)
+
+
+def save_effect(name: str | None, speed: int | None = None, rainbow: bool = False) -> None:
     """Store the widget's effect (and speed), or None to go back to the config. The
-    transition choice is kept either way."""
+    transition choice is kept either way. Choosing an effect turns the rainbow off unless
+    asked for."""
     old = effect_override()
     if name is None:
         if "transition" in old:
@@ -180,6 +220,11 @@ def save_effect(name: str | None, speed: int | None = None) -> None:
             EFFECT_FILE.unlink(missing_ok=True)
         return
     data = {"effect": name}
+    if rainbow:
+        data["rainbow"] = True
+        # remember what the rainbow replaced, so turning it off goes back to that
+        data["before"] = (_read_json(EFFECT_FILE) or {}).get("before") if old.get("rainbow") \
+            else {k: old[k] for k in ("effect", "speed") if k in old}
     if "transition" in old:
         data["transition"] = old["transition"]
     if speed is not None:

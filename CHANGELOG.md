@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-26 (widget: wheel, connection, brightness slider, rainbow)
+- The bar icon's scroll wheel changes the brightness, one step per notch.
+- The icon dims when no keyboard is connected. New setting **Hide when disconnected**
+  (Setup › Plugins) removes it from the bar instead.
+- The widget follows plugging and unplugging without polling: every apply writes the
+  connected transports to `~/.local/state/omarchy/aula-f75/devices`, and the widget
+  watches it.
+- Brightness is a slider like speed (1-5, sent on release).
+- New rainbow colour option: the first swatch of the bright presets shows the firmware's own
+  rainbow through the colourful effect (no colour sent), over the cable and the dongle. It
+  stays through brightness, speed and theme changes; picking a colour, Reset to theme or
+  another effect turns it off. New `f75ctl theme set-rainbow on|off [--speed N]`, a
+  `rainbow` field in `effect.json` and `status`, and a `rainbow` helper command.
+- New `f75ctl theme status --json`; the widget helper reads it with jq instead of
+  parsing the text output.
+- `f75ctl` runs with `/usr/bin/python3`, so a mise or other Python on the PATH can't
+  replace it; `install.sh` checks that Python.
+- `cmd_apply` is split into named steps, with no change in behaviour. The tests no
+  longer read your real `config.toml`.
+
 ## 2026-10-26 (settings, resets, Right Alt)
 - Right Alt is the key right of Space. It was mapped as Right Ctrl (`rctrl`, usage 0xE4),
   and the Fn and Right Alt grid columns were swapped. A dongle `reset-keymap` turned the

@@ -10,6 +10,8 @@
 #   preview [--exact] #HEX              same for a single colour
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
+#   rainbow [SPEED]                     the firmware's rainbow (colourful effect); any colour
+#                                       or reset turns it off
 #   effect  NAME|default [SPEED]        show the accent as this effect (default: config's)
 #   brightness N                        brightness 1-5
 #   transition none|fade|wave|explode   how the keys change colour over the cable
@@ -85,32 +87,33 @@ fi
 
 case "$command" in
 status)
-    status=$(controller status 2>/dev/null)
-    theme=$(awk '/^target:/ {print $2}' <<<"$status")
-    effect=$(awk '/^effect:/ {print $2}' <<<"$status")
-    speed=$(awk '/^speed:/ {print $2}' <<<"$status")
-    transition=$(awk '/^transition:/ {print $2}' <<<"$status")
-    devices=$(awk '/^devices:/ {print $2}' <<<"$status")
+    status=$(controller status --json 2>/dev/null)
+    # \x1f, not a tab: read collapses runs of whitespace separators, so an empty field
+    # (no keyboard colour yet) would shift the rest along
+    theme="" keyboard="" brightness=0 transport="" effect="" speed="" transition="" pinned="" rainbow=""
+    IFS=$'\x1f' read -r theme keyboard brightness transport effect speed transition pinned rainbow < <(
+        jq -r '[.target // "", .state.target // "", (.state.brightness // 0), .state.transport // "",
+                .effect // "", (.speed // ""), .transition // "", .pin.color // "", (.rainbow // false)]
+               | map(tostring) | join("\u001f")' <<<"$status" 2>/dev/null
+    )
+    [ -n "$theme" ] || fail "could not read the theme colour"
+    devices=$(jq -c '.devices // []' <<<"$status")
     music=false
     music_pid >/dev/null && music=true
     music_bg=$(cat "$MUSIC_BG" 2>/dev/null)
-    [ -n "$theme" ] || fail "could not read the theme colour"
-    keyboard="" source="" brightness=0 transport=""
-    IFS=$'\t' read -r keyboard source brightness transport < <(
-        jq -r '[.target // "", .accent_source // "", (.brightness // 0), (.transport // "")] | @tsv' "$STATE" 2>/dev/null
-    )
+    # the source of the colour last applied, which status (the theme's own) doesn't report
+    source=$(jq -r '.accent_source // ""' "$STATE" 2>/dev/null)
     # Rounding in the controller can leave a colour a step or two off, which
     # the eye cannot tell apart, so treat a small distance as a match.
     matches=false
     if valid_hex "$keyboard" && [ "$(hex_distance "$theme" "$keyboard")" -le 3 ]; then
         matches=true
     fi
-    pinned=$(jq -r '.color // empty' "$PIN" 2>/dev/null)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
         --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
         --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
-        --arg devices "${devices:-none}" --arg music_bg "${music_bg:-off}" \
-        --arg transition "${transition:-wave}" '{
+        --argjson devices "$devices" --arg music_bg "${music_bg:-off}" \
+        --arg transition "${transition:-wave}" --argjson rainbow "${rainbow:-false}" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -123,7 +126,8 @@ status)
         effect: $effect,
         speed: $speed,
         transition: $transition,
-        devices: ($devices | split(",") | map(select(. != "none"))),
+        rainbow: $rainbow,
+        devices: $devices,
         music: $music,
         musicBackground: $music_bg
     }'
@@ -154,7 +158,8 @@ apply)
 
 reset)
     controller unpin 2>/dev/null
-    controller apply >/dev/null 2>&1 || fail "keyboard apply failed"
+    # set-rainbow off clears the rainbow and reapplies the theme colour
+    controller set-rainbow off >/dev/null 2>&1 || fail "keyboard apply failed"
     jq -nc '{ok: true}'
     ;;
 
@@ -162,6 +167,14 @@ palette)
     controller palette 2>/dev/null \
         | jq -R -nc '{ok: true, colors: [inputs | split(" ") | {source: .[0], target: .[1]}]}' \
         || fail "could not read the theme colours"
+    ;;
+
+rainbow)
+    speed_args=()
+    [ -n "${1:-}" ] && speed_args=(--speed "$1")
+    controller set-rainbow on ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
+        || fail "could not set the rainbow"
+    jq -nc '{ok: true}'
     ;;
 
 effect)
@@ -186,7 +199,7 @@ brightness)
     ;;
 
 battery)
-    devices=$(controller status 2>/dev/null | awk '/^devices:/ {print $2}')
+    devices=$(controller status --json 2>/dev/null | jq -r '.devices | join(",")' 2>/dev/null)
     [ "$devices" = "wireless" ] || fail "battery is only reported over the 2.4 GHz dongle"
     percent=$("$F75CTL" battery 2>/dev/null | grep -oE '[0-9]+') || fail "no battery reading"
     jq -nc --argjson percent "$percent" '{ok: true, percent: $percent}'
@@ -234,7 +247,7 @@ music)
     ;;
 
 *)
-    echo "usage: aula-f75 status|palette|targets|preview|apply|reset|effect|transition|brightness|battery|music" >&2
+    echo "usage: aula-f75 status|palette|targets|preview|apply|reset|rainbow|effect|transition|brightness|battery|music" >&2
     exit 2
     ;;
 esac
