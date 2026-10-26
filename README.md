@@ -10,7 +10,7 @@ Makes the **AULA F75 Max** keyboard follow your [Omarchy](https://omarchy.org) t
 
 - **Theme accent on the keys.** Every theme change, login and plug-in sets the keyboard to the theme's accent colour, chosen to read well on the LEDs, or to a colour you pin per theme. Over the cable the new colour sweeps across the keys as a wave (or a fade or a burst from the middle).
 - **Bar widget.** Pick a colour (the theme's colours, bright presets or hex), brightness, any of the 19 lighting effects and their speed, and switch the music visualiser on and off.
-- **Music visualiser.** Spectrum bars from your system sound across the keys, with a dark or theme-colour background.
+- **Music visualiser.** Spectrum bars from your system sound across the keys, with a bar colour and a background you pick in the widget.
 - **`f75ctl`**, a command line for the rest: effects, per-key colours, key remaps and macros (with combos like `ctrl+c`), the LCD clock and images, and the battery level.
 - **Costs nothing while idle.** No daemon and no polling: the keyboard's firmware keeps the colour, and a theme change takes about 0.05 s of CPU.
 
@@ -45,7 +45,7 @@ A keyboard icon in the bar. Left-click opens the panel, right-click returns the 
 | Keyboard / Theme | the keys' colour next to the theme's |
 | Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
 | Light | brightness 1-5 (slider), effect, speed for animated effects, and the transition between colours |
-| Music | the visualiser switch (USB cable only) and the background behind the bars |
+| Music | the visualiser switch (USB cable only), the bar colour and the background behind the bars (dropdowns) |
 
 Commands to bind to keys (for example with `bindd` in `~/.config/hypr/bindings.conf`):
 

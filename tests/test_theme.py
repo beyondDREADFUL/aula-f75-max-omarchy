@@ -18,9 +18,9 @@ CONFIG = dict(cfg.DEFAULTS)
 class Palette(unittest.TestCase):
     def test_duplicates_are_dropped(self):
         # last-horizon repeats colours under several names (blue = accent, bright_* = base)
-        colors = {"accent": "#b59790", "red": "#c38b7b", "blue": "#b59790", "cyan": "#a5a0b6"}
+        colors = {"accent": "#b59790", "red": "#3fa34d", "blue": "#b59790", "cyan": "#a5a0b6"}
         out = theme_palette(CONFIG, colors)
-        self.assertEqual([s for s, _ in out], ["#B59790", "#C38B7B", "#A5A0B6"])
+        self.assertEqual([s for s, _ in out], ["#B59790", "#3FA34D", "#A5A0B6"])
         self.assertEqual(len({t for _, t in out}), len(out))
 
     def test_missing_and_bad_colours_are_skipped(self):
@@ -29,10 +29,20 @@ class Palette(unittest.TestCase):
 
     def test_theme_target_comes_first(self):
         # a [theme_overrides] entry sets the theme's real target; it replaces the accent
-        out = theme_palette(CONFIG, {"accent": "#b59790", "red": "#c38b7b"},
+        out = theme_palette(CONFIG, {"accent": "#b59790", "red": "#3fa34d"},
                             ("#B59790", "#D64831"))
         self.assertEqual(out[0], ("#B59790", "#D64831"))
-        self.assertEqual([s for s, _ in out], ["#B59790", "#C38B7B"])
+        self.assertEqual([s for s, _ in out], ["#B59790", "#3FA34D"])
+
+    def test_near_identical_colours_keep_the_first(self):
+        # accent and red land within 60 of each other in RGB, so red is dropped
+        out = theme_palette(CONFIG, {"accent": "#F71D28", "red": "#E8232E"})
+        self.assertEqual([s for s, _ in out], ["#F71D28"])
+
+    def test_distinct_colours_are_all_kept(self):
+        # red and orange are 128 apart in green, so both stay
+        out = theme_palette(CONFIG, {"red": "#FF0000", "yellow": "#FF8000"})
+        self.assertEqual([s for s, _ in out], ["#FF0000", "#FF8000"])
 
 
 class StateDir(unittest.TestCase):
