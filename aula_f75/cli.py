@@ -13,14 +13,17 @@ from .layout import KEYS, key
 
 class _Printer:
     """Stands in for the hidraw device in --dry-run: prints feature reports."""
-    last = b""
+    last = prev = b""
 
     def set_feature(self, payload, size=64):
-        self.last = bytes(payload).ljust(64, b"\0")
+        self.prev, self.last = self.last, bytes(payload).ljust(64, b"\0")
         print(self.last.rstrip(b"\0").hex(" ") or "(zeros)")
 
     def get_feature(self, size=64):
-        return self.last[:3] + b"\x01" + self.last[4:]
+        reply = bytearray(self.last[:3] + b"\x01" + self.last[4:])
+        if self.last[:2] == b"\x04\x02":     # end of a settings write: sum and count
+            reply[4:6] = bytes([sum(self.prev) & 0xFF, 1])
+        return bytes(reply)
 
     def close(self):
         pass
@@ -30,6 +33,13 @@ def _dry_keyboard():
     kb = Wired.__new__(Wired)
     kb.dev, kb.path, kb._lock_fd = _Printer(), "(dry run)", -1
     return kb
+
+
+SLEEP = {"never": 0, "1": 1, "5": 2, "30": 3}     # minutes -> sleep code
+RESETS = {
+    "reset-keyboard": "clears the remaps, keeps the lighting",
+    "factory-reset": "clears the remaps, the lighting and the settings",
+}
 
 
 def rgb(text: str):
@@ -118,6 +128,14 @@ def cmd_battery(kb, a):
     print(f"battery {kb.battery()}%")
 
 
+def cmd_settings(kb, a):
+    kb.settings(SLEEP[a.sleep], a.debounce)
+
+
+def cmd_reset(kb, a):
+    kb.reset(factory=a.cmd == "factory-reset")
+
+
 def cmd_gif(kb, a):
     blob, frames = lcd.image_blob(a.file)
     print(f"{frames} frame(s), {len(blob) // lcd.CHUNK} chunks")
@@ -191,6 +209,20 @@ def build_parser():
     s.set_defaults(fn=cmd_music)
 
     sub.add_parser("battery", help="battery level (2.4G only)").set_defaults(fn=cmd_battery)
+
+    s = sub.add_parser("settings", help="sleep timer and key debounce; the keyboard can't "
+                       "report them, so both are written each time (sleep applies on 2.4G)")
+    s.add_argument("--sleep", required=True, choices=SLEEP, metavar="never|1|5|30",
+                   help="minutes idle before sleep")
+    s.add_argument("--debounce", required=True, type=int, choices=range(1, 6),
+                   metavar="1-5", help="key debounce level")
+    s.set_defaults(fn=cmd_settings)
+
+    for name, text in RESETS.items():
+        s = sub.add_parser(name, help=f"{text} (2.4G dongle only)")
+        s.add_argument("--yes", action="store_true", help="confirm the reset")
+        s.set_defaults(fn=cmd_reset)
+
     sub.add_parser("keys", help="list key names").set_defaults(fn=None)
     return p
 
@@ -205,9 +237,12 @@ def main(argv=None) -> int:
     if a.fn is None:
         print(" ".join(KEYS))
         return 0
+    if a.cmd in RESETS and not a.yes:
+        print(f"f75ctl: {a.cmd} {RESETS[a.cmd]}; run it again with --yes", file=sys.stderr)
+        return 1
     try:
         kb = _dry_keyboard() if a.dry_run else open_keyboard(
-            "wireless" if a.dongle or a.cmd == "battery" else "auto")
+            "wireless" if a.dongle or a.cmd == "battery" or a.cmd in RESETS else "auto")
         with kb:
             a.fn(kb, a)
     except (NotFound, Busy, Rejected, Unsupported, KeyError, ValueError, OSError,

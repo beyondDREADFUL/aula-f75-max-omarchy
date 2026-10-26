@@ -51,6 +51,22 @@ class Unsupported(RuntimeError):
     pass
 
 
+def settings_block(sleep: int, debounce: int) -> bytes:
+    """The 16-byte settings block: sleep timer code 0-3 (never, 1, 5, 30 min) and debounce
+    level 1-5. Bytes 2-5 (Win lock, Alt+F4, Alt+Tab, Fn switch) are ignored by firmware 106,
+    so they stay 0."""
+    if sleep not in range(4):
+        raise ValueError(f"sleep code {sleep} is not in 0-3")
+    if debounce not in range(1, 6):
+        raise ValueError(f"debounce {debounce} is not in 1-5")
+    block = bytearray(16)
+    block[1] = 0x01
+    block[6] = sleep
+    block[8] = debounce
+    block[14:16] = b"\xaa\x55"
+    return bytes(block)
+
+
 def lock_path() -> Path:
     base = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/aula-f75-{os.getuid()}"
     Path(base).mkdir(parents=True, exist_ok=True)
@@ -104,6 +120,8 @@ class Keyboard:
     def frame(self, colors: dict[int, tuple[int, int, int]]) -> None: self._no("live frames")
     def read_table(self) -> list[tuple[int, int, int, int]]: self._no("LED read-back")
     def battery(self) -> int: self._no("the battery level")
+    def settings(self, sleep: int, debounce: int) -> None: self._no("keyboard settings")
+    def reset(self, factory: bool = False) -> None: self._no("reset")
 
 
 class Wired(Keyboard):
@@ -163,6 +181,30 @@ class Wired(Keyboard):
 
     def set_clock(self, payload):
         self.transaction(0x28, payload, apply=False)
+
+    def settings(self, sleep, debounce):
+        # the data packet is not read back: the keyboard then rejects the end packet
+        block = settings_block(sleep, debounce)
+        data = bytearray(64)
+        data[0:14] = block[0:14]
+        data[62:64] = block[14:16]
+        for attempt in (1, 2):
+            try:
+                self._send([0x04, 0x18])
+                self._send([0x04, 0x17, 0x01, 0, 0, 0, 0, 0, 1])
+                time.sleep(PACKET_DELAY)
+                self.dev.set_feature(bytes(data))
+                time.sleep(PACKET_DELAY)
+                # the end reply carries the sum of the data packet and the packet count
+                reply = self._send([0x04, 0x02])
+                if reply[4] != (sum(data) & 0xFF) or reply[5] != 1:
+                    raise Rejected(f"keyboard did not take the settings (reply "
+                                   f"{reply[:6].hex(' ')})")
+                return
+            except Rejected:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
 
     def upload_image(self, blob, frames, progress=None):
         chunks = len(blob) // CHUNK
@@ -262,6 +304,13 @@ class Dongle(Keyboard):
         buf[:used] = blob[:used]
         buf[-2:] = b"\xaa\x55"
         self._send_chunks(0x09, bytes(buf), total)
+
+    def settings(self, sleep, debounce):
+        self._send(0x07, 0, settings_block(sleep, debounce))
+
+    def reset(self, factory=False):
+        # 1F clears the remaps; 0F also clears the lighting and the settings
+        self._send(0x0F if factory else 0x1F, 0, b"")
 
     def battery(self):
         while self.dev.read(33, 0.05):

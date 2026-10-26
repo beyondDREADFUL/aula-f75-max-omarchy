@@ -5,7 +5,7 @@ import unittest
 import unittest.mock
 
 from aula_f75 import keymap, lcd, lighting
-from aula_f75.device import Dongle, Wired
+from aula_f75.device import Dongle, Rejected, Unsupported, Wired, settings_block
 from aula_f75.layout import KEY_SLOTS, KEYS, POS
 
 
@@ -32,9 +32,31 @@ class FakeDev:
         pass
 
 
-def fake(cls):
+class SettingsDev(FakeDev):
+    """Answers a settings write the way the keyboard does: the end reply carries the sum of
+    the data packet (plus bad_sum, to test a rejection) and the packet count. log keeps the
+    order of the writes and reads."""
+
+    def __init__(self, bad_sum=0):
+        super().__init__()
+        self.bad_sum, self.prev, self.log = bad_sum, b"", []
+
+    def set_feature(self, payload, size=64):
+        self.log.append("set")
+        self.prev = self.last
+        super().set_feature(payload, size)
+
+    def get_feature(self, size=64):
+        self.log.append("get")
+        reply = bytearray(super().get_feature(size))
+        if self.last[:2] == b"\x04\x02":
+            reply[4:6] = bytes([(sum(self.prev) + self.bad_sum) & 0xFF, 1])
+        return bytes(reply)
+
+
+def fake(cls, dev=None):
     kb = cls.__new__(cls)
-    kb.dev, kb.path, kb._lock_fd = FakeDev(), "/dev/fake", -1
+    kb.dev, kb.path, kb._lock_fd = dev or FakeDev(), "/dev/fake", -1
     return kb
 
 
@@ -42,6 +64,12 @@ class Layout(unittest.TestCase):
     def test_80_keys_all_on_the_grid(self):
         self.assertEqual(len(KEY_SLOTS), 80)
         self.assertEqual(set(KEY_SLOTS), set(POS))
+
+    def test_right_alt_is_slot_98_right_of_space(self):
+        self.assertEqual(KEYS["ralt"], (98, 0xE6))
+        self.assertNotIn("rctrl", KEYS)
+        self.assertEqual(POS[98], (5, 9))          # Space, Right Alt, Fn in that order
+        self.assertEqual(POS[96], (5, 10))
 
 
 class Effects(unittest.TestCase):
@@ -122,6 +150,59 @@ class Tables(unittest.TestCase):
         with self.assertRaises(KeyError) as caught:
             keymap.parse_assignments(["nokey=a"])
         self.assertEqual(str(caught.exception), "unknown key 'nokey'")
+
+
+class Settings(unittest.TestCase):
+    def test_block_bytes(self):
+        self.assertEqual(settings_block(3, 2).hex(" "),
+                         "00 01 00 00 00 00 03 00 02 00 00 00 00 00 aa 55")
+
+    def test_invalid_values(self):
+        for sleep, debounce in ((4, 1), (-1, 1), (0, 0), (0, 6)):
+            with self.assertRaises(ValueError):
+                settings_block(sleep, debounce)
+
+    def test_cable_framing_has_no_read_back_of_the_data_packet(self):
+        kb = fake(Wired, SettingsDev())
+        with unittest.mock.patch("time.sleep"):
+            kb.settings(3, 2)
+        self.assertEqual(kb.dev.features, [
+            "04 18", "04 17 01 00 00 00 00 00 01",
+            f"00 01 00 00 00 00 03 00 02{' 00' * 53} aa 55", "04 02"])
+        # write, read; write, read; the data packet is written and not read back
+        self.assertEqual(kb.dev.log, ["set", "get", "set", "get", "set", "set", "get"])
+
+    def test_cable_rejects_a_wrong_sum(self):
+        kb = fake(Wired, SettingsDev(bad_sum=1))
+        with unittest.mock.patch("time.sleep"), self.assertRaises(Rejected):
+            kb.settings(0, 1)
+        self.assertEqual(kb.dev.features.count("04 18"), 2)     # one retry
+
+    def test_dongle_message(self):
+        kb = fake(Dongle)
+        kb._send = Dongle._send.__get__(kb)
+        with unittest.mock.patch("time.sleep"):
+            kb.settings(3, 2)
+        msg = kb.dev.writes[0]
+        self.assertEqual(msg[:19].hex(" "),
+                         "07 10 00 00 01 00 00 00 00 03 00 02 00 00 00 00 00 aa 55")
+        self.assertEqual(msg[31], sum(msg[:31]) & 0xFF)
+
+
+class Resets(unittest.TestCase):
+    def test_dongle_reset_messages(self):
+        kb = fake(Dongle)
+        kb._send = Dongle._send.__get__(kb)
+        with unittest.mock.patch("time.sleep"):
+            kb.reset()
+            kb.reset(factory=True)
+        for msg, cmd in zip(kb.dev.writes, (0x1F, 0x0F)):
+            self.assertEqual(msg[:3].hex(" "), f"{cmd:02x} 00 00")
+            self.assertEqual(msg[31], sum(msg[:31]) & 0xFF)
+
+    def test_cable_has_no_reset(self):
+        with self.assertRaises(Unsupported):
+            fake(Wired).reset()
 
 
 class Lcd(unittest.TestCase):

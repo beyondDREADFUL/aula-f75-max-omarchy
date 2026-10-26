@@ -82,7 +82,9 @@ bytes).
 | the other 61 | empty: never written by effects, nothing lights up | **read** + **seen** |
 
 There is no separate underglow on this keyboard. Slot numbers, HID usages and the 6 x 15
-grid positions come from the vendor's `layouts/rgb-keyboard.xml`.
+grid positions come from the vendor's `layouts/rgb-keyboard.xml`, except Right Alt: the
+vendor file says slot 95, which lights nothing, and the key is slot 98, right of Space
+(**seen**). Fn is slot 96 and sends no key event (**seen**). There is no right Ctrl.
 
 ---
 
@@ -105,6 +107,11 @@ byte 3 (after the report ID) to `01` when accepted (**read**). Data packets are 
 never flagged. The keyboard sometimes rejects a transaction right after a large write; one
 retry after 0.5 s has always been enough.
 
+After a settings write (`17`) the reply to `04 02` is `04 02 00 01 SS NN`: `SS` is the 8-bit
+sum of the data packet the keyboard received, `NN` the number of packets (**seen**). The
+settings data packet must not be read back: the keyboard then rejects the end packet with
+`ff` (**seen**).
+
 ### 3.2 Commands
 
 | Cmd | Data | What it does | Status |
@@ -115,6 +122,7 @@ retry after 0.5 s has always been enough.
 | `27` | same as `11` | Fn-layer keymap | **seen** |
 | `15` | macro blob (§6.2), begin `04 19`, no `04 f0` | macro store | **seen** |
 | `28` | `00 01 5a YY MM DD hh mm ss 00 wd` (Sunday = 0), no `04 f0` | LCD clock | **seen** |
+| `17` | 1 packet: settings block (header byte 2 = 01; the firmware ignores it), no `04 f0`, no read-back of the data packet | sleep timer (byte 6: 0 never, 1 = 1 min, 2 = 5 min, 3 = 30 min) and debounce (byte 8: level 1-5); bytes 2-5 (Win lock, Alt+F4, Alt+Tab, Fn switch) are accepted but ignored by firmware 106 | **seen** (sleep 0 and 1 timed; debounce accepted, effect not measured) |
 | `72` | header byte 2 = frames, bytes 8-9 = chunk count (LE); no data packets | LCD image upload (§7) | **seen** |
 | `20` | up to 8 packets of `[slot, R, G, B]`; no `04 18` / `04 f0` | live frame (§4.3) | **seen** |
 | `F5` | header byte 8 = pages; then read that many feature reports | read the LED table | **read** |
@@ -320,7 +328,7 @@ layers, so writing macros for one layer probably replaces those bound on the oth
 Every message is a 32-byte output report: `[cmd, len, offset, data..., checksum]` with
 byte 31 = sum of bytes 0-30 & `ff`. On Linux it is written as 33 bytes with report ID 0
 first. There is no begin/end framing and no commit packet (**seen**: everything below
-works without the `0F` packet v1 sent first).
+works without the `0F` packet v1 sent first; `0F` is the factory reset, see the table).
 
 | Cmd | Offset | Data | Status |
 |---|---|---|---|
@@ -329,6 +337,12 @@ works without the `0F` packet v1 sent first).
 | `03` | key slot | one 4-byte layer entry; to restore a key send `[2, 0, own usage, 0]` | **seen** |
 | `09` | chunk number | the macro blob, trimmed to used bytes plus one spare chunk, `aa 55` at the end | **seen** |
 | `20 01` | | battery query, answered `20 01 00 <percent>` | **read** |
+| `07` | 0 | the same 16-byte settings block as cable `17` (§3.2) | **seen**: acked `07 10 00 00` |
+| `1f` | 0 | no data; clears the remaps, keeps the lighting | **seen**: acked `1f 00 00 00` |
+| `0f` | 0 | no data; factory reset: clears the remaps, the lighting and the settings | **seen**: acked |
+| `0c` | | the clock, same payload as cable `28` | **read** (decoded from the vendor program, not tried) |
+| `0b` | | music: `0b 1c 00 fore back bg_brightness` and 15 bar heights 0-6, drawn by the keyboard | **read** (decoded from the vendor program, not tried) |
+| `7f`, `80` | | LCD image in 28-byte chunks | **read** (decoded from the vendor program, not tried) |
 
 Acks for `03` (`[03, 04, slot, status]`) arrive several messages late, so only a non-zero
 status is treated as an error. The last chunk's `len` covers only the used bytes, but all
@@ -416,6 +430,8 @@ f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
 f75ctl remap capslock=esc f1=a,b,c f2=ctrl+c [--fn-layer] | macro ... | reset-keymap [--fn-layer]
 f75ctl clock | gif FILE | battery | keys
+f75ctl settings --sleep never|1|5|30 --debounce 1-5
+f75ctl reset-keyboard --yes | factory-reset --yes   (2.4G dongle only)
 f75ctl music [--color ...] [--background NAME|RRGGBB|theme] [--test]
 f75ctl --dry-run ...       print cable packets, send nothing
 f75ctl --dongle ...        use the dongle when the cable is also plugged in

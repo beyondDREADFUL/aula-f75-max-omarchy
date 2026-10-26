@@ -2,7 +2,9 @@
 
 The LED table has 144 slots. Only the 80 slots in KEYS light up (checked by eye, docs/
 HANDBOOK.md); 95, 110 and 111 are written by effects but nothing lights up, the rest are
-empty. Slot numbers and usages come from the vendor's layouts/rgb-keyboard.xml.
+empty. Slot numbers and usages come from the vendor's layouts/rgb-keyboard.xml, except
+Right Alt: the vendor file lists it as slot 95, but on the keyboard it is slot 98 and slot 95
+lights nothing (seen). There is no Right Ctrl key.
 """
 
 # key name -> (LED slot, HID usage); Fn has no usage of its own
@@ -25,7 +27,7 @@ KEYS = {
     "b": (78, 0x05), "n": (79, 0x11), "m": (80, 0x10), "comma": (81, 0x36), "period": (82, 0x37),
     "slash": (83, 0x38), "rshift": (84, 0xE5), "up": (101, 0x52), "end": (120, 0x4D),
     "lctrl": (91, 0xE0), "lwin": (92, 0xE3), "lalt": (93, 0xE2), "space": (94, 0x2C),
-    "fn": (96, None), "rctrl": (98, 0xE4), "left": (99, 0x50), "down": (100, 0x51),
+    "fn": (96, None), "ralt": (98, 0xE6), "left": (99, 0x50), "down": (100, 0x51),
     "right": (102, 0x4F),
 }
 ALIASES = {"ctrl": "lctrl", "shift": "lshift", "alt": "lalt", "win": "lwin", "super": "lwin"}
@@ -48,7 +50,7 @@ POS = {
     62: (3, 7), 63: (3, 8), 64: (3, 9), 65: (3, 10), 66: (3, 11), 85: (3, 13), 121: (3, 14),
     73: (4, 0), 74: (4, 2), 75: (4, 3), 76: (4, 4), 77: (4, 5), 78: (4, 6), 79: (4, 7),
     80: (4, 8), 81: (4, 9), 82: (4, 10), 83: (4, 11), 84: (4, 12), 101: (4, 13), 120: (4, 14),
-    91: (5, 0), 92: (5, 1), 93: (5, 2), 94: (5, 6), 96: (5, 9), 98: (5, 10), 99: (5, 12),
+    91: (5, 0), 92: (5, 1), 93: (5, 2), 94: (5, 6), 98: (5, 9), 96: (5, 10), 99: (5, 12),
     100: (5, 13), 102: (5, 14),
 }
 

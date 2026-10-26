@@ -80,6 +80,8 @@ f75ctl reset-keymap
 f75ctl gif cat.gif                            # LCD image or animation (needs pillow)
 f75ctl music --background 202020              # spectrum bars; Ctrl+C returns to the theme
 f75ctl battery                                # 2.4 GHz only
+f75ctl settings --sleep 5 --debounce 3         # sleep after 1, 5 or 30 min (or never); debounce 1-5
+f75ctl reset-keyboard --yes                   # clear remaps (factory-reset: everything); 2.4 GHz
 ```
 
 `f75ctl --dry-run ...` prints the packets instead of sending them. Each `remap` or `macro` command replaces the whole layer, so put a layer's remaps and macros in one command.
