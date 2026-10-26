@@ -33,7 +33,7 @@ DEFAULTS = {
     "effect": "static",             # any lighting mode that takes a colour
     "default_brightness": 5,
     "speed": 3,
-    "rainbow": False,               # widget only: colourful in the firmware's own rainbow
+    "rainbow": False,               # widget only: the firmware's rainbow flag on the current effect
     "direction": 0,
     "transition": "wave",           # how the keys change colour over the cable: none, fade,
     "transition_time": 1.0,         #   wave or explode; seconds
@@ -102,6 +102,7 @@ def load_config(path: Path | None = None) -> dict:
             config["lcd_clock"] = bool(lcd["clock"])
     except (TypeError, ValueError) as exc:
         log(f"config value error: {exc}; using defaults for the rest")
+    config["rainbow"] = bool(config["rainbow"]) and config["effect"] not in NO_COLOR_EFFECTS
     overrides = data.get("theme_overrides", {})
     if isinstance(overrides, dict):
         config["theme_overrides"] = {str(k): str(v) for k, v in overrides.items()}
@@ -166,7 +167,8 @@ def clear_pin() -> None:
 
 def effect_override() -> dict:
     """The effect and speed chosen in the widget, which take precedence over [lighting]:
-    {"effect": name, "speed": 0-5, "rainbow": True}, a key missing when not chosen."""
+    {"effect": name, "speed": 0-5, "transition": style, "rainbow": True}, a key missing when
+    not chosen. The rainbow is a flag on whatever effect runs (not off or custom)."""
     data = _read_json(EFFECT_FILE)
     if not isinstance(data, dict):
         return {}
@@ -177,8 +179,7 @@ def effect_override() -> dict:
         chosen["speed"] = data["speed"]
     if data.get("transition") in STYLES:
         chosen["transition"] = data["transition"]
-    # the rainbow is the colourful effect without the theme colour; it means nothing for others
-    if data.get("rainbow") is True and chosen.get("effect") == "colourful":
+    if data.get("rainbow") is True:
         chosen["rainbow"] = True
     return chosen
 
@@ -191,41 +192,57 @@ def save_transition(style: str) -> None:
     _write_json(EFFECT_FILE, data)
 
 
-def clear_rainbow() -> None:
-    """Turn the rainbow off. A colour picked or a reset while it was on shows a steady
-    colour, so the effect and speed go too; the transition choice stays."""
-    data = _read_json(EFFECT_FILE)
-    if not isinstance(data, dict) or data.pop("rainbow", None) is None:
-        return
-    for key in ("effect", "speed", "before"):
-        data.pop(key, None)
+def _store(data: dict) -> None:
     if data:
         _write_json(EFFECT_FILE, data)
     else:
         EFFECT_FILE.unlink(missing_ok=True)
 
 
-def save_effect(name: str | None, speed: int | None = None, rainbow: bool = False) -> None:
+def _read_data() -> dict:
+    data = _read_json(EFFECT_FILE)
+    return data if isinstance(data, dict) else {}
+
+
+def clear_rainbow() -> None:
+    """Turn the rainbow off. The effect, speed and transition stay."""
+    data = _read_data()
+    if data.pop("rainbow", None) is not None:
+        _store(data)
+
+
+def save_rainbow(on: bool, speed: int | None = None) -> None:
+    """Set or clear the rainbow flag. Turning it on with no saved effect saves the config's
+    effect, so the current effect is kept. The transition and speed are kept."""
+    data = _read_data()
+    if on:
+        data["rainbow"] = True
+        if data.get("effect") not in MODES or data["effect"] in NO_COLOR_EFFECTS:
+            data["effect"] = load_config()["effect"]
+    else:
+        data.pop("rainbow", None)
+    if speed is not None:
+        data["speed"] = min(max(int(speed), 0), 5)
+    _store(data)
+
+
+def save_effect(name: str | None, speed: int | None = None, rainbow: bool | None = None) -> None:
     """Store the widget's effect (and speed), or None to go back to the config. The
-    transition choice is kept either way. Choosing an effect turns the rainbow off unless
-    asked for."""
+    transition choice and the rainbow flag are kept; pass rainbow to change the flag."""
     old = effect_override()
-    if name is None:
-        if "transition" in old:
-            _write_json(EFFECT_FILE, {"transition": old["transition"]})
-        else:
-            EFFECT_FILE.unlink(missing_ok=True)
-        return
-    data = {"effect": name}
-    if rainbow:
+    flag = old.get("rainbow", False) if rainbow is None else rainbow
+    data = {}
+    if name is not None:
+        data["effect"] = name
+        if speed is not None:
+            data["speed"] = min(max(int(speed), 0), 5)
+        elif "speed" in old:
+            data["speed"] = old["speed"]       # changing the effect keeps the chosen speed
+    if flag:
         data["rainbow"] = True
     if "transition" in old:
         data["transition"] = old["transition"]
-    if speed is not None:
-        data["speed"] = min(max(int(speed), 0), 5)
-    elif "speed" in old:
-        data["speed"] = old["speed"]           # changing the effect keeps the chosen speed
-    _write_json(EFFECT_FILE, data)
+    _store(data)
 
 
 def theme_slug() -> str | None:

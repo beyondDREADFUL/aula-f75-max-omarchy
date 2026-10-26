@@ -103,6 +103,7 @@ def load_config() -> dict:
     chosen = cfg.effect_override()
     config["effect_source"] = "widget" if "effect" in chosen else "config"
     config.update(chosen)
+    config["rainbow"] = bool(config.get("rainbow")) and config["effect"] not in cfg.NO_COLOR_EFFECTS
     return config
 
 
@@ -185,6 +186,8 @@ def _choose_brightness(args, kb, state, config) -> int:
     stored = min(max(int(state.get("brightness", config["default_brightness"])), 1), 5)
     if args.brightness is not None:
         return min(max(args.brightness, 1), 5)
+    if config["rainbow"]:
+        return stored       # a still rainbow isn't uniform, so the keys would read wrong
     if kb.transport == "wired" and state.get("effect", "static") == "static":
         # only a static colour can be read back: an animated effect shows the keys
         # dimmed part of the time, which would read as a lower level
@@ -196,12 +199,13 @@ def _write(args, kb, state, config, target, brightness) -> str:
     """Show the effect (through a transition where possible), set the clock and verify.
     Returns the verify result: "n/a", "skipped", "True" or "False"."""
     last = _last_target(state)
-    # color None is the firmware's own rainbow; it has no single colour to move to or verify
-    effect = lighting.Effect(config["effect"], None if config["rainbow"] else target, brightness,
-                             config["speed"], config["direction"])
+    # the rainbow flag has no single colour to move to or verify
+    rainbow = config["rainbow"]
+    effect = lighting.Effect(config["effect"], None if rainbow else target, brightness,
+                             config["speed"], config["direction"], rainbow=rainbow)
     # animate only from one static colour to another: an animated effect has no
     # single colour to start from, and the dongle can't show live frames
-    if (kb.transport == "wired" and last and last != target
+    if (not rainbow and kb.transport == "wired" and last and last != target
             and config["effect"] == "static" and state.get("effect", "static") == "static"):
         transition.run(kb, last, target, effect, config["transition"],
                        config["transition_time"])
@@ -211,7 +215,7 @@ def _write(args, kb, state, config, target, brightness) -> str:
         return "n/a"
     if config["lcd_clock"]:
         kb.set_clock(clock_payload())
-    if args.verify and config["effect"] == "static":
+    if args.verify and config["effect"] == "static" and not rainbow:
         return str(verify(kb, target, brightness))
     return "skipped"
 
@@ -282,9 +286,9 @@ def cmd_set_effect(args) -> int:
 
 def cmd_set_rainbow(args) -> int:
     if args.state == "on":
-        cfg.save_effect("colourful", args.speed, rainbow=True)
+        cfg.save_rainbow(True, args.speed)
     else:
-        cfg.clear_rainbow()
+        cfg.save_rainbow(False, args.speed)
     return _reapply()
 
 
@@ -401,8 +405,8 @@ def build_parser() -> argparse.ArgumentParser:
                                                    if m not in cfg.NO_COLOR_EFFECTS]])
     e.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     e.set_defaults(func=cmd_set_effect)
-    r = sub.add_parser("set-rainbow", help="show the firmware's rainbow (the colourful effect) "
-                       "or turn it off, and apply")
+    r = sub.add_parser("set-rainbow", help="turn the firmware's rainbow flag on or off for the "
+                       "current effect, and apply")
     r.add_argument("state", choices=["on", "off"])
     r.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     r.set_defaults(func=cmd_set_rainbow)

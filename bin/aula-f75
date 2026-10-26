@@ -10,8 +10,8 @@
 #   preview [--exact] #HEX              same for a single colour
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
-#   rainbow [SPEED]                     the firmware's rainbow (colourful effect); any colour
-#                                       or reset turns it off
+#   rainbow [on|off] [SPEED]            the firmware's rainbow flag on the current effect;
+#                                       a colour or reset turns it off
 #   effect  NAME|default [SPEED]        show the accent as this effect (default: config's)
 #   brightness N                        brightness 1-5
 #   transition none|fade|wave|explode   how the keys change colour over the cable
@@ -158,7 +158,7 @@ apply)
 
 reset)
     controller unpin 2>/dev/null
-    # set-rainbow off clears the rainbow and reapplies the theme colour
+    # set-rainbow off clears the rainbow (the effect stays) and reapplies the theme colour
     controller set-rainbow off >/dev/null 2>&1 || fail "keyboard apply failed"
     jq -nc '{ok: true}'
     ;;
@@ -170,9 +170,11 @@ palette)
     ;;
 
 rainbow)
+    state=on
+    case "${1:-}" in on|off) state=$1; shift ;; esac    # no argument means on
     speed_args=()
     [ -n "${1:-}" ] && speed_args=(--speed "$1")
-    controller set-rainbow on ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
+    controller set-rainbow "$state" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
         || fail "could not set the rainbow"
     jq -nc '{ok: true}'
     ;;

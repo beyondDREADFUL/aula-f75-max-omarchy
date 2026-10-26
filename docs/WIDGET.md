@@ -17,7 +17,7 @@ Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 |---|---|
 | Header | connection (`CABLE` or `2.4G`, with the battery level over 2.4G) |
 | Keyboard / Theme | the colour the keys have and the theme's colour, side by side; `PINNED` or `CUSTOM` when they differ |
-| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (the firmware's own rainbow, shown as "rainbow" in the Keyboard box); a hex field with a live preview and Apply; **Keep this colour**; Reset to theme |
+| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as "rainbow" in the Keyboard box); a hex field with a live preview and Apply; **Keep this colour**; Reset to theme |
 | LIGHT | brightness 1-5 (slider); the effect, picked from a list that folds out inside the panel; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable |
 | MUSIC | the music visualiser switch (needs the USB cable), with a dark or theme-colour background behind the bars |
 
@@ -32,10 +32,10 @@ reconnects; a colour picked while it is on replaces the pin. Switching it off, o
 Reset to theme, releases it.
 
 The effect and speed chosen here are remembered over the config's `[lighting]`
-(`f75ctl theme set-effect NAME --speed N`). The rainbow swatch is the colourful effect
-with no colour (`f75ctl theme set-rainbow on`); it stays through brightness, speed and
-theme changes. Picking a colour or Reset to theme while it is on turns it off and
-shows a steady colour (static); choosing another effect turns it off and keeps that effect.
+(`f75ctl theme set-effect NAME --speed N`). The rainbow swatch toggles the
+firmware's rainbow flag on the current effect (`f75ctl theme set-rainbow on|off`); it does
+not change the effect. It stays through brightness, speed, theme changes and choosing
+another effect. Picking a colour or Reset to theme turns it off and keeps the effect.
 
 Music runs `f75ctl music` in the background; switching the background restarts it, and switching it off returns
 the keyboard to the theme colour. With the theme-colour background, a theme change

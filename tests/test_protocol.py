@@ -78,9 +78,21 @@ class Effects(unittest.TestCase):
         self.assertEqual(lighting.Effect("static", (0, 255, 0)).payload().hex(" "),
                          "01 00 ff 00 00 00 00 00 00 05 03 00 00 00 aa 55")
 
-    def test_effect_without_colour_is_rainbow(self):
-        p = lighting.Effect("breath").payload()
+    def test_rainbow_flag_on_a_coloured_effect(self):
+        p = lighting.Effect("breath", rainbow=True).payload()
         self.assertEqual((p[0], p[1:4], p[8]), (0x07, b"\xff\x00\x00", 1))
+
+    def test_static_with_the_rainbow_flag(self):
+        p = lighting.Effect("static", rainbow=True).payload()
+        self.assertEqual((p[0], p[8]), (0x01, 1))
+
+    def test_static_without_colour_is_white(self):
+        p = lighting.Effect("static").payload()
+        self.assertEqual((p[1:4], p[8]), (b"\xff\xff\xff", 0))
+
+    def test_off_and_custom_ignore_the_flag(self):
+        for mode in ("off", "custom"):
+            self.assertEqual(lighting.Effect(mode, (0, 0, 0), rainbow=True).payload()[8], 0)
 
     def test_wired_transaction_framing(self):
         kb = fake(Wired)

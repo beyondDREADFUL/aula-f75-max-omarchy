@@ -60,7 +60,10 @@ def _background(text: str) -> str:
 
 
 def cmd_light(kb, a):
-    kb.light(lighting.Effect(a.mode, a.color, a.brightness, a.speed, a.direction))
+    # no colour: white for static, the rainbow flag for the other effects
+    rainbow = a.color is None and a.mode != "static"
+    kb.light(lighting.Effect(a.mode, a.color, a.brightness, a.speed, a.direction,
+                             rainbow=rainbow))
 
 
 def cmd_demo(kb, a):
@@ -68,7 +71,8 @@ def cmd_demo(kb, a):
         if name in ("off", "custom") or mode < a.start:
             continue
         print(f"{mode:#04x} {name}", flush=True)
-        kb.light(lighting.Effect(name, (255, 0, 0) if name == "static" else None))
+        kb.light(lighting.Effect(name, (255, 0, 0) if name == "static" else None,
+                                 rainbow=name != "static"))
         time.sleep(a.seconds)
 
 

@@ -43,7 +43,7 @@ A keyboard icon in the bar. Left-click opens the panel, right-click returns the 
 |---|---|
 | Header | how the keyboard is connected, its battery over 2.4G |
 | Keyboard / Theme | the keys' colour next to the theme's |
-| Colour | the theme's colours, bright presets (the first is the firmware's own rainbow), a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
+| Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
 | Light | brightness 1-5 (slider), effect, speed for animated effects, and the transition between colours |
 | Music | the visualiser switch (USB cable only) and the background behind the bars |
 

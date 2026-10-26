@@ -298,52 +298,66 @@ class Rainbow(Isolated):
         self.kb = FakeKb()
         self.apply("set-rainbow", "on", "--speed", "2", kb=self.kb)
 
-    def test_sends_no_colour_in_the_colourful_mode(self):
+    def test_keeps_the_current_effect_and_sets_the_flag(self):
         effect = self.kb.lit[-1]
-        self.assertEqual((effect.mode, effect.color, effect.speed), ("colourful", None, 2))
-        self.assertEqual(effect.payload()[8], 1)       # the firmware's rainbow flag
+        self.assertEqual((effect.mode, effect.color, effect.speed), ("static", None, 2))
+        self.assertEqual((effect.payload()[0], effect.payload()[8]), (0x01, 1))
         self.assertIs(cfg.load_state()["rainbow"], True)
         self.assertEqual(json.loads((self.state / "effect.json").read_text()),
-                         {"effect": "colourful", "rainbow": True, "speed": 2})
+                         {"effect": "static", "rainbow": True, "speed": 2})
+
+    def test_keeps_a_configured_effect(self):
+        self.apply("set-rainbow", "off", kb=FakeKb())
+        cfg.EFFECT_FILE.unlink(missing_ok=True)
+        cfg.CONFIG_FILE.write_text('[lighting]\neffect = "breath"\n')
+        kb = FakeKb()
+        self.apply("set-rainbow", "on", kb=kb)
+        self.assertEqual((kb.lit[-1].mode, kb.lit[-1].payload()[8]), ("breath", 1))
+        self.assertEqual(cfg.effect_override()["effect"], "breath")
 
     def test_works_on_the_dongle(self):
         kb = FakeKb("wireless")
         self.apply("apply", kb=kb)
-        self.assertEqual((kb.lit[0].mode, kb.lit[0].color), ("colourful", None))
+        self.assertEqual((kb.lit[0].mode, kb.lit[0].payload()[8]), ("static", 1))
 
     def test_set_brightness_keeps_it(self):
         kb = FakeKb()
         self.apply("set-brightness", "2", kb=kb)
-        self.assertEqual((kb.lit[0].mode, kb.lit[0].color, kb.lit[0].brightness),
-                         ("colourful", None, 2))
+        self.assertEqual((kb.lit[0].rainbow, kb.lit[0].brightness), (True, 2))
 
-    def test_apply_with_a_colour_clears_it(self):
+    def test_another_effect_keeps_it(self):
+        kb = FakeKb()
+        self.apply("set-effect", "breath", kb=kb)
+        self.assertEqual((kb.lit[0].mode, kb.lit[0].rainbow), ("breath", True))
+        self.assertIs(cfg.effect_override()["rainbow"], True)
+
+    def test_a_colour_turns_it_off_and_keeps_the_effect(self):
+        self.apply("set-effect", "breath", kb=FakeKb())
         kb = FakeKb()
         self.apply("apply", "--color", "#ff0000", "--exact", kb=kb)
-        self.assertEqual(kb.lit[0].color, (255, 0, 0))
+        self.assertEqual((kb.lit[0].mode, kb.lit[0].color, kb.lit[0].rainbow),
+                         ("breath", (255, 0, 0), False))
         self.assertIs(cfg.load_state()["rainbow"], False)
-        self.assertNotIn("effect", cfg.effect_override())     # back to the config's effect
-
-    def test_colour_while_on_goes_back_to_static(self):
-        kb = FakeKb()
-        self.apply("set-brightness", "3", kb=FakeKb())       # the rainbow stays on
-        self.apply("apply", "--color", "#ff0000", kb=kb)
-        self.assertEqual((kb.lit[0].mode, kb.lit[0].color), ("static", (255, 0, 0)))
-        self.assertEqual(cfg.effect_override(), {})
-
-    def test_reset_while_on_goes_back_to_static(self):
-        kb = FakeKb()
-        self.apply("set-rainbow", "off", kb=kb)
-        self.assertEqual(kb.lit[-1].mode, "static")
-        self.assertNotIn("effect", cfg.effect_override())
-    def test_another_effect_clears_it(self):
-        self.apply("set-effect", "breath", kb=FakeKb())
+        self.assertEqual(cfg.effect_override()["effect"], "breath")
         self.assertNotIn("rainbow", cfg.effect_override())
 
-    def test_off_returns_to_the_theme_colour(self):
+    def test_reset_turns_it_off_and_keeps_the_effect(self):
         kb = FakeKb()
         self.apply("set-rainbow", "off", kb=kb)
-        self.assertIsNotNone(kb.lit[0].color)
+        self.assertEqual((kb.lit[-1].mode, kb.lit[-1].rainbow), ("static", False))
+        self.assertIsNotNone(kb.lit[-1].color)
+        self.assertEqual(cfg.effect_override()["effect"], "static")
+        self.assertNotIn("rainbow", cfg.effect_override())
+
+    def test_no_transition_and_no_read_back(self):
+        cfg.save_state({"target_rgb": [0, 0, 255], "effect": "static", "brightness": 4})
+        kb = FakeKb()
+        with mock.patch("theme.controller.transition.run") as run, \
+                mock.patch("theme.controller.live_brightness") as live:
+            self.apply("apply", "--verify", kb=kb)
+        run.assert_not_called()
+        live.assert_not_called()
+        self.assertEqual((kb.lit[0].rainbow, kb.lit[0].brightness), (True, 4))
 
     def test_status_json_reports_it(self):
         self.assertIs(json.loads(self.run_main("status", "--json")[1])["rainbow"], True)

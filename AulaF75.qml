@@ -26,7 +26,7 @@ Panel {
   property bool pinned: false
   property int brightness: 5
   property string effect: "static"
-  property bool rainbow: false        // colourful in the firmware's own colours
+  property bool rainbow: false        // the firmware's rainbow flag on the current effect
   property int speed: 3
   property string transition: "wave"  // how the keys change colour over the cable
   property var devices: []
@@ -275,18 +275,16 @@ Panel {
     }
   }
 
-  // The firmware's rainbow is the colourful effect without a colour. Speed changes while
-  // it is on go through here too, so they keep it.
-  function setRainbow(speed) {
-    root.rainbow = true
-    root.effect = "colourful"
+  // The rainbow is a flag on the current effect, not an effect of its own. Speed changes
+  // while it is on go through here too, so they keep it.
+  function setRainbow(on, speed) {
+    root.rainbow = on
     if (speed !== undefined) root.speed = speed
-    root.act(["rainbow"].concat(speed === undefined ? [] : [String(speed)]), "effect",
-             "Rainbow…", "Rainbow")
+    root.act(["rainbow", on ? "on" : "off"].concat(speed === undefined ? [] : [String(speed)]),
+             "effect", on ? "Rainbow…" : "Rainbow off…", on ? "Rainbow" : "Rainbow off")
   }
 
   function setEffect(name, speed) {
-    root.rainbow = false
     root.effect = name
     root.speed = speed
     root.act(["effect", name, String(speed)], "effect", "Switching to " + name + "…",
@@ -397,7 +395,7 @@ Panel {
   component SwatchRow: Flow {
     id: row
     property var colors: []           // hex strings
-    property bool withRainbow: false  // a first swatch for the firmware's rainbow
+    property bool withRainbow: false  // a first swatch that toggles the rainbow
     width: parent ? parent.width : 0
     spacing: Style.space(8)
 
@@ -431,7 +429,7 @@ Panel {
       MouseArea {
         anchors.fill: parent
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.setRainbow()
+        onClicked: root.setRainbow(!root.rainbow)
       }
     }
 
@@ -778,7 +776,7 @@ Panel {
             tickCount: 6
             value: root.speed
             onReleased: function(value) {
-              if (root.rainbow) root.setRainbow(Math.round(value))
+              if (root.rainbow) root.setRainbow(true, Math.round(value))
               else root.setEffect(root.effect, Math.round(value))
             }
           }
