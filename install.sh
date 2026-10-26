@@ -14,7 +14,7 @@ root() {
     if $dry; then echo "+ sudo $*"; else sudo "$@"; fi
 }
 # python 3.11+ is required (tomllib); stop before installing anything that can't run
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
+/usr/bin/python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null \
     || { echo "python 3.11 or newer is required: sudo pacman -S python" >&2; exit 1; }
 command -v jq >/dev/null || echo "warning: jq not found; the bar widget needs it: sudo pacman -S jq" >&2
 
@@ -102,7 +102,7 @@ echo "  f75ctl theme apply"
 # optional features: say what is missing, install nothing
 missing=()
 command -v cava >/dev/null || missing+=("  music visualiser needs cava:   sudo pacman -S cava")
-python3 -c 'import PIL' 2>/dev/null || missing+=("  LCD images (f75ctl gif) need pillow:   sudo pacman -S python-pillow")
+/usr/bin/python3 -c 'import PIL' 2>/dev/null || missing+=("  LCD images (f75ctl gif) need pillow:   sudo pacman -S python-pillow")
 if [ ${#missing[@]} -gt 0 ]; then
     echo
     echo "Optional, not installed:"

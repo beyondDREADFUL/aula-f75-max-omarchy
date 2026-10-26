@@ -156,7 +156,8 @@ live-frame pause is needed on Linux and not on Windows.
 
 16-byte payload: `mode, R, G, B, 0*4, rainbow, brightness 0-5, speed 0-5, direction 0/1,
 0, 0, aa, 55`. With no colour, effects run as rainbow (`ff0000` + rainbow flag), as the
-vendor app sends them. Static and custom never set the rainbow flag.
+vendor app sends them. Byte 8 = 1 sets the rainbow for any effect; confirmed on the keyboard
+with static (a still rainbow across the keys, against one colour with the flag off).
 
 Modes (names from the vendor's language file, **seen** with `f75ctl demo`):
 `off 00, static 01, single-on 02, single-off 03, glittering 04, falling 05, colourful 06,
@@ -410,8 +411,9 @@ soft white that keeps their hue (warm if none); lightness is held in
 | `~/.config/omarchy/aula-f75/config.toml` | config (`config.example.toml` documents every key); never overwritten by install |
 | `~/.local/state/omarchy/aula-f75/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
 | `.../pin.json` | pinned colour, if any |
-| `.../effect.json` | effect and speed chosen in the widget (override `[lighting]`) |
+| `.../effect.json` | effect, speed and `rainbow` (bool, any effect except off and custom) chosen in the widget (override `[lighting]`) |
 | `.../music.pid`, `music.log`, `music.background` | the visualiser started from the widget, and its background (`off` or `theme`) |
+| `.../devices` | connected transports (`wired`, `wireless`, both or `none`), written by every apply and watched by the widget |
 | `.../theme.log` | one line per apply |
 | `$XDG_RUNTIME_DIR/aula-f75.lock` | the keyboard lock |
 
@@ -421,7 +423,8 @@ soft white that keeps their hue (warm if none); lightness is held in
 
 ```bash
 f75ctl theme apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
-f75ctl theme unpin | status [--read-table] | read | set-brightness N
+f75ctl theme unpin | status [--json] [--read-table] | read | set-brightness N
+f75ctl theme set-rainbow on|off [--speed N]   rainbow flag on the current effect, or off
 f75ctl theme set-effect NAME|default [--speed N]   widget's effect, over the config's
 f75ctl theme set-transition none|fade|wave|explode
 f75ctl theme palette    the theme's colours as the keys would show them

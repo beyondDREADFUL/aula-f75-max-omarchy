@@ -37,14 +37,14 @@ f75ctl theme apply
 
 ## The widget
 
-A keyboard icon in the bar. Left-click opens the panel, right-click returns the keyboard to the theme colour. Every choice applies at once; only the hex field waits for Apply.
+A keyboard icon in the bar. Left-click opens the panel, right-click returns the keyboard to the theme colour, and the scroll wheel changes the brightness. The icon dims when no keyboard is connected; **Hide when disconnected** in Setup › Plugins removes it instead. Every choice applies at once; only the hex field waits for Apply.
 
 | Section | What it does |
 |---|---|
-| Header | how the keyboard is connected, and its battery over 2.4G |
+| Header | how the keyboard is connected, its battery over 2.4G |
 | Keyboard / Theme | the keys' colour next to the theme's |
-| Colour | the theme's colours, bright presets, a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
-| Light | brightness 1-5, effect, speed for animated effects, and the transition between colours |
+| Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
+| Light | brightness 1-5 (slider), effect, speed for animated effects, and the transition between colours |
 | Music | the visualiser switch (USB cable only) and the background behind the bars |
 
 Commands to bind to keys (for example with `bindd` in `~/.config/hypr/bindings.conf`):

@@ -7,6 +7,7 @@ LCD clock. The dongle has no read-back, so it reuses the stored brightness.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import sys
@@ -102,6 +103,7 @@ def load_config() -> dict:
     chosen = cfg.effect_override()
     config["effect_source"] = "widget" if "effect" in chosen else "config"
     config.update(chosen)
+    config["rainbow"] = bool(config.get("rainbow")) and config["effect"] not in cfg.NO_COLOR_EFFECTS
     return config
 
 
@@ -125,37 +127,43 @@ def theme_palette(config: dict, colors: dict, first=None) -> list[tuple[str, str
     return out
 
 
-def cmd_apply(args) -> int:
-    config = load_config()
-    state = cfg.load_state()
-    theme = cfg.theme_slug() or args.theme or state.get("theme") or "unknown"
+def _resolve_and_pin(args, config):
+    """(target, accent, source) for this apply; saves a --pin colour first."""
     color, exact = args.color, args.exact
+    if color and args.pin and not args.dry_run:
+        parse_color(color)
+        cfg.save_pin(color, exact)
+    elif not color and (pin := cfg.load_pin()):
+        color, exact = pin["color"], pin["exact"]
+    return resolve_target(config, color, exact)
+
+
+def _record_devices() -> None:
+    # udev runs apply on every plug and unplug; the widget watches this file
     try:
-        if color and args.pin and not args.dry_run:
-            parse_color(color)
-            cfg.save_pin(color, exact)
-        elif not color and (pin := cfg.load_pin()):
-            color, exact = pin["color"], pin["exact"]
-        target, accent, source = resolve_target(config, color, exact)
-    except (ValueError, OSError, RuntimeError) as exc:
-        cfg.log(f"apply failed: {exc}")
-        return 1
-    summary = (f"theme={theme} accent={hexstr(accent)} ({source}) target={hexstr(target)} "
-               f"{describe(target)}")
-    if args.dry_run:
-        print(summary)
-        return 0
+        cfg.save_devices(present())
+    except OSError as exc:
+        cfg.log(f"could not write {cfg.DEVICES_FILE}: {exc}")
+
+
+def _hand_to_music(args, summary) -> bool:
+    """True if the music visualiser took the new colour."""
     if (not args.color or args.pin) and (pid := music_following_theme()):
         # music holds the keyboard: have it reload the background colour between frames,
         # instead of waiting 15 s for the lock; it applies the theme itself when it stops
         try:
             os.kill(pid, signal.SIGHUP)
             cfg.log(f"{summary} result=music background")
-            return 0
+            return True
         except OSError:
             pass
+    return False
+
+
+def _open_logged(config, summary):
+    """The open keyboard, or the return code when it can't be opened (logged)."""
     try:
-        kb = open_keyboard(config["device_prefer"])
+        return open_keyboard(config["device_prefer"])
     except NotFound as exc:
         cfg.log(f"{summary} result=skipped ({exc})")
         return 0
@@ -167,48 +175,109 @@ def cmd_apply(args) -> int:
         # e.g. no access to the hidraw node before the 'aula' group applies
         cfg.log(f"{summary} result=failed ({exc})")
         return 1
+
+
+def _last_target(state):
     last = state.get("target_rgb")
-    last = tuple(last) if isinstance(last, list) and len(last) == 3 else None
+    return tuple(last) if isinstance(last, list) and len(last) == 3 else None
+
+
+def _choose_brightness(args, kb, state, config) -> int:
     stored = min(max(int(state.get("brightness", config["default_brightness"])), 1), 5)
-    verified = "n/a"
-    try:
-        with kb:
-            if args.brightness is not None:
-                brightness = min(max(args.brightness, 1), 5)
-            elif kb.transport == "wired" and state.get("effect", "static") == "static":
-                # only a static colour can be read back: an animated effect shows the keys
-                # dimmed part of the time, which would read as a lower level
-                brightness = live_brightness(kb, last, stored)
-            else:
-                brightness = stored
-            effect = lighting.Effect(config["effect"], target, brightness, config["speed"],
-                                     config["direction"])
-            # animate only from one static colour to another: an animated effect has no
-            # single colour to start from, and the dongle can't show live frames
-            if (kb.transport == "wired" and last and last != target and not args.dry_run
-                    and config["effect"] == "static" and state.get("effect", "static") == "static"):
-                transition.run(kb, last, target, effect, config["transition"],
-                               config["transition_time"])
-            else:
-                kb.light(effect)
-            if kb.transport == "wired":
-                if config["lcd_clock"]:
-                    kb.set_clock(clock_payload())
-                verified = "skipped"
-                if args.verify and config["effect"] == "static":
-                    verified = str(verify(kb, target, brightness))
-    except (Rejected, OSError) as exc:
-        cfg.log(f"{summary} transport={kb.transport} result=failed ({exc})")
-        return 1
+    if args.brightness is not None:
+        return min(max(args.brightness, 1), 5)
+    if config["rainbow"]:
+        return stored       # a still rainbow isn't uniform, so the keys would read wrong
+    if kb.transport == "wired" and state.get("effect", "static") == "static":
+        # only a static colour can be read back: an animated effect shows the keys
+        # dimmed part of the time, which would read as a lower level
+        return live_brightness(kb, _last_target(state), stored)
+    return stored
+
+
+def _write(args, kb, state, config, target, brightness) -> str:
+    """Show the effect (through a transition where possible), set the clock and verify.
+    Returns the verify result: "n/a", "skipped", "True" or "False"."""
+    last = _last_target(state)
+    # the rainbow flag has no single colour to move to or verify
+    rainbow = config["rainbow"]
+    effect = lighting.Effect(config["effect"], None if rainbow else target, brightness,
+                             config["speed"], config["direction"], rainbow=rainbow)
+    # animate only from one static colour to another: an animated effect has no
+    # single colour to start from, and the dongle can't show live frames
+    if (not rainbow and kb.transport == "wired" and last and last != target
+            and config["effect"] == "static" and state.get("effect", "static") == "static"):
+        transition.run(kb, last, target, effect, config["transition"],
+                       config["transition_time"])
+    else:
+        kb.light(effect)
+    if kb.transport != "wired":
+        return "n/a"
+    if config["lcd_clock"]:
+        kb.set_clock(clock_payload())
+    if args.verify and config["effect"] == "static" and not rainbow:
+        return str(verify(kb, target, brightness))
+    return "skipped"
+
+
+def _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified,
+                  picked=False):
     cfg.save_state({
         "version": STATE_VERSION, "theme": theme, "accent": hexstr(accent),
         "accent_source": source, "target": hexstr(target), "target_rgb": list(target),
-        "brightness": brightness, "effect": config["effect"], "transport": kb.transport,
+        "brightness": brightness, "effect": config["effect"], "rainbow": config["rainbow"],
+        "picked": picked,       # a colour chosen by hand: effect, speed and brightness keep it
+        "transport": kb.transport,
         "device_path": kb.path, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     })
     cfg.log(f"{summary} brightness={brightness} effect={config['effect']} "
             f"transport={kb.transport} verified={verified} result=ok")
+
+
+def cmd_apply(args) -> int:
+    if not args.dry_run:
+        _record_devices()
+        if args.color:
+            cfg.clear_rainbow()     # a colour picked on purpose replaces the rainbow
+    config = load_config()
+    state = cfg.load_state()
+    theme = cfg.theme_slug() or args.theme or state.get("theme") or "unknown"
+    try:
+        target, accent, source = _resolve_and_pin(args, config)
+    except (ValueError, OSError, RuntimeError) as exc:
+        cfg.log(f"apply failed: {exc}")
+        return 1
+    summary = (f"theme={theme} accent={hexstr(accent)} ({source}) target={hexstr(target)} "
+               f"{describe(target)}")
+    if args.dry_run:
+        print(summary)
+        return 0
+    if _hand_to_music(args, summary):
+        return 0
+    kb = _open_logged(config, summary)
+    if isinstance(kb, int):
+        return kb
+    try:
+        with kb:
+            brightness = _choose_brightness(args, kb, state, config)
+            verified = _write(args, kb, state, config, target, brightness)
+    except (Rejected, OSError) as exc:
+        cfg.log(f"{summary} transport={kb.transport} result=failed ({exc})")
+        return 1
+    _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified,
+                  picked=bool(args.color))
     return 0 if verified != "False" else 1
+
+
+def _reapply(brightness=None) -> int:
+    """`f75ctl theme apply`, optionally forcing a brightness. A colour chosen by hand (and
+    not pinned) is kept, so a speed or effect change doesn't fall back to the theme."""
+    args = build_parser().parse_args(["apply"])
+    args.brightness = brightness
+    state = cfg.load_state()
+    if state.get("picked") and cfg.load_pin() is None and state.get("target"):
+        args.color, args.exact = state["target"], True
+    return cmd_apply(args)
 
 
 def cmd_set_effect(args) -> int:
@@ -219,9 +288,15 @@ def cmd_set_effect(args) -> int:
     else:
         print(f"unknown effect {args.effect!r}", file=sys.stderr)
         return 2
-    args.color, args.exact, args.pin, args.dry_run, args.verify, args.theme, args.brightness = (
-        None, False, False, False, False, None, None)
-    return cmd_apply(args)
+    return _reapply()
+
+
+def cmd_set_rainbow(args) -> int:
+    if args.state == "on":
+        cfg.save_rainbow(True, args.speed)
+    else:
+        cfg.save_rainbow(False, args.speed)
+    return _reapply()
 
 
 def cmd_palette(args) -> int:
@@ -248,9 +323,7 @@ def cmd_set_brightness(args) -> int:
     state = cfg.load_state()
     state["brightness"] = min(max(args.brightness, 1), 5)
     cfg.save_state(state)
-    args.color, args.exact, args.pin, args.dry_run, args.verify, args.theme = (
-        None, False, False, False, False, None)
-    return cmd_apply(args)
+    return _reapply(args.brightness)
 
 
 def cmd_read(args) -> int:
@@ -263,30 +336,58 @@ def cmd_read(args) -> int:
     return 0
 
 
+def _read_keys(config):
+    with open_keyboard(config["device_prefer"]) as kb:
+        return _dominant(kb.read_table(), set(KEY_SLOTS))
+
+
 def cmd_status(args) -> int:
     config, state = load_config(), cfg.load_state()
     try:
         target, accent, source = resolve_target(config)
     except Exception as exc:  # noqa: BLE001
-        print(f"theme error: {exc}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": str(exc)}))
+        else:
+            print(f"theme error: {exc}", file=sys.stderr)
         return 1
     pin = cfg.load_pin()
+    devices = sorted(present())
+    if args.json:
+        status = {
+            "theme": cfg.theme_slug() or "unknown", "theme_dir": str(cfg.THEME_DIR),
+            "pin": pin, "accent": hexstr(accent), "accent_source": source,
+            "target": hexstr(target), "target_description": describe(target),
+            "effect": config["effect"], "effect_source": config["effect_source"],
+            "rainbow": config["rainbow"],
+            "speed": config["speed"], "transition": config["transition"],
+            "transition_time": config["transition_time"], "devices": devices,
+            "config": {"direction": config["direction"], "prefer": config["device_prefer"],
+                       "lcd_clock": config["lcd_clock"],
+                       "theme_overrides": len(config["theme_overrides"])},
+            "state": {k: state.get(k) for k in ("brightness", "transport", "target", "effect")},
+        }
+        if args.read_table:
+            stored, share = _read_keys(config)
+            status["keys"] = {"color": hexstr(stored) if stored else None, "share": share}
+        print(json.dumps(status))
+        return 0
     print(f"theme: {cfg.theme_slug() or 'unknown'} ({cfg.THEME_DIR})")
     if pin:
         print(f"pin: {pin['color']}{' exact' if pin['exact'] else ''} (overrides the theme)")
     print(f"accent: {hexstr(accent)} ({source})")
     print(f"target: {hexstr(target)} {describe(target)}")
     print(f"effect: {config['effect']} ({config['effect_source']})")
+    print(f"rainbow: {'on' if config['rainbow'] else 'off'}")
     print(f"speed: {config['speed']}")
     print(f"transition: {config['transition']} {config['transition_time']:g}s")
-    print(f"devices: {','.join(sorted(present())) or 'none'}")
+    print(f"devices: {','.join(devices) or 'none'}")
     print(f"config: direction={config['direction']} prefer={config['device_prefer']} "
           f"lcd_clock={config['lcd_clock']} theme_overrides={len(config['theme_overrides'])}")
     print(f"state: brightness={state.get('brightness', '?')} transport={state.get('transport', '?')} "
           f"target={state.get('target', '?')} effect={state.get('effect', '?')}")
     if args.read_table:
-        with open_keyboard(config["device_prefer"]) as kb:
-            stored, share = _dominant(kb.read_table(), set(KEY_SLOTS))
+        stored, share = _read_keys(config)
         print(f"keys now: {hexstr(stored) if stored else 'off'} ({share:.0%} of lit keys)")
     return 0
 
@@ -311,6 +412,11 @@ def build_parser() -> argparse.ArgumentParser:
                                                    if m not in cfg.NO_COLOR_EFFECTS]])
     e.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     e.set_defaults(func=cmd_set_effect)
+    r = sub.add_parser("set-rainbow", help="turn the firmware's rainbow flag on or off for the "
+                       "current effect, and apply")
+    r.add_argument("state", choices=["on", "off"])
+    r.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
+    r.set_defaults(func=cmd_set_rainbow)
     t = sub.add_parser("set-transition", help="how the keys change colour over the cable")
     t.add_argument("style", choices=transition.STYLES)
     t.set_defaults(func=cmd_set_transition)
@@ -321,6 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("read", help="dump the live LED table (wired)").set_defaults(func=cmd_read)
     s = sub.add_parser("status", help="show theme, target and state")
     s.add_argument("--read-table", action="store_true", help="also read the keys (wired)")
+    s.add_argument("--json", action="store_true", help="print one JSON object (for the bar widget)")
     s.set_defaults(func=cmd_status)
     b = sub.add_parser("set-brightness", help="set brightness 1-5 and reapply")
     b.add_argument("brightness", type=int)

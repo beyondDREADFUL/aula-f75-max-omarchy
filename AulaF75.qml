@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -26,6 +27,7 @@ Panel {
   property bool pinned: false
   property int brightness: 5
   property string effect: "static"
+  property bool rainbow: false        // the firmware's rainbow flag on the current effect
   property int speed: 3
   property string transition: "wave"  // how the keys change colour over the cable
   property var devices: []
@@ -36,10 +38,11 @@ Panel {
   property var palette: []           // [{source, target}] from the theme
   property string previewHex: ""      // what the keys would show for the hex field
   property string musicBackground: "off"
-  property bool effectsOpen: false    // the effect list is folded out
   property bool batteryWanted: false  // read the battery once the next status is in
   property string message: ""
   property bool failed: false
+  property bool devicesFileSeen: false  // the first read of the devices file is startup, not a change
+  property real wheelPending: 0       // wheel delta not yet turned into a brightness step
 
   readonly property string helperPath: String(Qt.resolvedUrl("bin/aula-f75")).replace(/^file:\/\//, "")
   readonly property var brights: ["#FF0000", "#FF8000", "#FFD000", "#00C853", "#00A0FF", "#8839EF", "#FF2D95"]
@@ -52,14 +55,23 @@ Panel {
   readonly property color bg: bar ? bar.background : "#101315"
   readonly property color dim: Qt.darker(fg, 1.4)
   readonly property string family: bar ? bar.fontFamily : "monospace"
+  readonly property bool connected: devices.length > 0
+  // Setting from the widget's shell.json entry, injected by the bar into `settings`.
+  readonly property bool hideWhenDisconnected: root.setting("hideWhenDisconnected", false) === true
+  readonly property bool shown: connected || !hideWhenDisconnected
+  // Written by every `f75ctl theme apply`, which udev runs on each plug and unplug.
+  readonly property string devicesPath: Quickshell.env("HOME") + "/.local/state/omarchy/aula-f75/devices"
   readonly property string connection: wired ? "CABLE" : wireless ? "2.4G" : "NOT CONNECTED"
   readonly property string tooltipText: devices.length === 0
     ? "Keyboard not connected"
-    : "Keyboard " + (keyboardHex || "—") + " · " + effect + " · " + brightness + "/5 · "
+    : "Keyboard " + (rainbow ? "rainbow" : keyboardHex || "—") + " · " + effect + " · " + brightness + "/5 · "
       + (wired ? "cable" : "2.4G") + (musicOn ? " · music on" : "") + (pinned ? " · pinned" : "")
 
-  implicitWidth: button.implicitWidth
-  implicitHeight: button.implicitHeight
+  // Hidden, the bar slot takes no space: it sizes itself from a visible item only.
+  visible: shown
+  implicitWidth: shown ? button.implicitWidth : 0
+  implicitHeight: shown ? button.implicitHeight : 0
+  onShownChanged: if (!shown) root.close()
 
   // The status line keeps a fixed height so the panel never resizes while it changes.
   FontMetrics {
@@ -103,8 +115,16 @@ Panel {
     var next = root.queue[0]
     root.queue = root.queue.slice(1)
     helperProcess.handler = next.handler
+    helperProcess.key = next.key
     helperProcess.command = [root.helperPath].concat(next.args)
     helperProcess.running = true
+  }
+
+  // A brightness step still waiting or running: a status read now would carry the
+  // old level and undo the steps the wheel has already shown.
+  function brightnessPending() {
+    if (helperProcess.running && helperProcess.key === "brightness") return true
+    return root.queue.some(function(item) { return item.key === "brightness" })
   }
 
   function parse(text) {
@@ -118,6 +138,7 @@ Panel {
   Process {
     id: helperProcess
     property var handler: null
+    property string key: ""
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -157,8 +178,10 @@ Panel {
       root.keyboardHex = String(result.keyboard || "").toUpperCase()
       root.matches = result.matches === true
       root.pinned = result.pinned === true
-      root.brightness = Math.max(1, Math.min(5, Number(result.brightness) || 5))
+      if (!root.brightnessPending())
+        root.brightness = Math.max(1, Math.min(5, Number(result.brightness) || 5))
       root.effect = String(result.effect || "static")
+      root.rainbow = result.rainbow === true
       root.speed = Number(result.speed)
       root.transition = String(result.transition || "wave")
       root.devices = result.devices || []
@@ -200,6 +223,7 @@ Panel {
   // Colours are sent as shown: swatches already show what the keys get. While a colour
   // is pinned, a new one replaces the pin.
   function setColour(hex) {
+    root.rainbow = false
     root.act(["apply", "--exact"].concat(root.pinned ? ["--pin"] : [], [hex]), "colour",
              "Applying " + hex + "…", "Applied " + hex)
   }
@@ -215,6 +239,7 @@ Panel {
   }
 
   function resetToTheme() {
+    root.rainbow = false
     root.previewHex = ""
     root.act(["reset"], "colour", "Returning to the theme colour…", "Back on the theme colour")
   }
@@ -234,6 +259,29 @@ Panel {
     root.brightness = level
     root.act(["brightness", String(level)], "brightness", "Brightness " + level + "…",
              "Brightness " + level)
+  }
+
+  // One brightness step per wheel notch (120 units). A touchpad sends many small
+  // deltas for one swipe, so they add up first. The queue keeps only the latest
+  // level, so fast scrolling never piles up commands.
+  function wheelStep(delta) {
+    if (delta === 0 || !root.connected) return
+    root.wheelPending += delta
+    while (Math.abs(root.wheelPending) >= 120) {
+      var step = root.wheelPending > 0 ? 1 : -1
+      root.wheelPending -= step * 120
+      var level = Math.max(1, Math.min(5, root.brightness + step))
+      if (level !== root.brightness) root.setBrightness(level)
+    }
+  }
+
+  // The rainbow is a flag on the current effect, not an effect of its own. Speed changes
+  // while it is on go through here too, so they keep it.
+  function setRainbow(on, speed) {
+    root.rainbow = on
+    if (speed !== undefined) root.speed = speed
+    root.act(["rainbow", on ? "on" : "off"].concat(speed === undefined ? [] : [String(speed)]),
+             "effect", on ? "Rainbow…" : "Rainbow off…", on ? "Rainbow" : "Rainbow off")
   }
 
   function setEffect(name, speed) {
@@ -264,10 +312,31 @@ Panel {
     hexInput.text = ""
     root.previewHex = ""
     root.message = ""
-    root.effectsOpen = false
   }
 
   Component.onCompleted: Qt.callLater(root.refresh)
+
+  // ---- connection -----------------------------------------------------------
+  // The devices file changes on every plug and unplug, so the widget follows the
+  // connection without polling. Until it exists, the status command is all there is.
+
+  function applyDevicesFile(text) {
+    var names = String(text || "").trim().split(",").map(function(name) { return name.trim() })
+    root.devices = names.filter(function(name) { return name === "wired" || name === "wireless" })
+  }
+
+  FileView {
+    path: root.devicesPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      root.applyDevicesFile(text())
+      if (root.devicesFileSeen) root.refresh()
+      root.devicesFileSeen = true
+    }
+    onLoadFailed: root.devicesFileSeen = true
+    onFileChanged: reload()
+  }
 
   // The theme change moves the keyboard colour. The hook applies it a moment later,
   // so wait for that before reading state back.
@@ -310,11 +379,13 @@ Panel {
     bar: root.bar
     text: "󰧹"
     useActiveColor: false
+    dimmed: !root.connected
     tooltipText: root.tooltipText
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.RightButton) root.resetToTheme()
       else root.toggle()
     }
+    onWheelMoved: function(delta) { root.wheelStep(delta) }
   }
 
   // ---- panel ----------------------------------------------------------------
@@ -323,8 +394,43 @@ Panel {
   component SwatchRow: Flow {
     id: row
     property var colors: []           // hex strings
+    property bool withRainbow: false  // a first swatch that toggles the rainbow
     width: parent ? parent.width : 0
     spacing: Style.space(8)
+
+    Rectangle {
+      visible: row.withRainbow
+      width: Style.space(26)
+      height: width
+      radius: width / 2
+      color: "transparent"
+      border.width: root.rainbow ? Style.space(2) : Math.max(1, Style.space(1))
+      border.color: root.rainbow ? root.fg : Qt.darker(root.fg, 2.0)
+
+      // Canvas needs no extra import; a conical gradient sweeps the hues round the circle.
+      Canvas {
+        anchors.fill: parent
+        anchors.margins: parent.border.width
+        onWidthChanged: requestPaint()
+        onPaint: {
+          var ctx = getContext("2d")
+          ctx.clearRect(0, 0, width, height)
+          var gradient = ctx.createConicalGradient(width / 2, height / 2, 0)
+          for (var i = 0; i <= 6; i++)
+            gradient.addColorStop(i / 6, Qt.hsla(i / 6, 1.0, 0.5, 1.0))
+          ctx.fillStyle = gradient
+          ctx.beginPath()
+          ctx.arc(width / 2, height / 2, width / 2, 0, 2 * Math.PI)
+          ctx.fill()
+        }
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.setRainbow(!root.rainbow)
+      }
+    }
 
     Repeater {
       model: row.colors
@@ -432,7 +538,7 @@ Panel {
           Repeater {
             model: [
               { label: root.pinned ? "KEYBOARD · PINNED" : root.matches ? "KEYBOARD" : "KEYBOARD · CUSTOM",
-                hex: root.keyboardHex },
+                hex: root.rainbow ? "" : root.keyboardHex, shown: root.rainbow ? "rainbow" : "" },
               { label: "THEME", hex: root.themeHex }
             ]
 
@@ -461,7 +567,7 @@ Panel {
 
                 Text {
                   anchors.horizontalCenter: parent.horizontalCenter
-                  text: modelData.hex !== "" ? modelData.hex : "—"
+                  text: modelData.hex !== "" ? modelData.hex : modelData.shown || "—"
                   color: root.textOn(modelData.hex)
                   font.family: root.family
                   font.pixelSize: Style.font.caption
@@ -486,6 +592,7 @@ Panel {
         }
 
         SwatchRow {
+          withRainbow: true
           colors: root.brights
         }
 
@@ -583,51 +690,138 @@ Panel {
           fontFamily: root.family
         }
 
-        LabelledRow {
-          label: "Brightness"
-          ButtonGroup {
-            options: ["1", "2", "3", "4", "5"]
-            value: String(root.brightness)
-            foreground: root.fg
-            fontFamily: root.family
-            fontSize: Style.font.caption
-            onChanged: function(value) { root.setBrightness(Number(value)) }
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+
+          Text {
+            text: "Brightness"
+            color: root.fg
+            font.family: root.family
+            font.pixelSize: Style.font.caption
+          }
+
+          // Sends on release, like speed; the queue keeps only the latest level.
+          PanelSlider {
+            width: parent.width
+            bar: root.bar
+            minimum: 1
+            maximum: 5
+            step: 1
+            integer: true
+            tickCount: 5
+            value: root.brightness
+            onReleased: function(value) { root.setBrightness(Math.round(value)) }
           }
         }
 
-        // The effect list folds out inside the panel: a popup would be cut off at the
-        // panel's edge.
         LabelledRow {
           label: "Effect"
-          Button {
-            text: root.effect + (root.effectsOpen ? "  ▴" : "  ▾")
-            bordered: true
-            foreground: root.fg
-            fontFamily: root.family
-            fontSize: Style.font.caption
-            onClicked: root.effectsOpen = !root.effectsOpen
-          }
-        }
+          Rectangle {
+            id: effectTrigger
+            width: Style.space(150)
+            height: Style.spacing.controlHeight
+            radius: Style.cornerRadius
+            color: effectMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent"
+            border.width: Style.space(1)
+            border.color: effectPopup.opened || effectMouse.containsMouse ? root.fg : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.45)
 
-        Flow {
-          visible: root.effectsOpen
-          width: parent.width
-          spacing: Style.space(6)
+            Text {
+              anchors.left: parent.left
+              anchors.right: effectChevron.left
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.spacing.controlPaddingX
+              anchors.rightMargin: Style.spacing.md
+              text: root.effect
+              color: root.fg
+              font.family: root.family
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+            }
 
-          Repeater {
-            model: root.effects
+            Text {
+              id: effectChevron
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.rightMargin: Style.spacing.controlGap
+              text: "\udb80\udd40"
+              color: Qt.darker(root.fg, 1.2)
+              font.family: root.family
+              font.pixelSize: Style.font.body
+            }
 
-            Button {
-              required property string modelData
-              text: modelData
-              selected: modelData === root.effect
-              bordered: true
-              foreground: root.fg
-              fontFamily: root.family
-              fontSize: Style.font.caption
-              onClicked: {
-                root.effectsOpen = false
-                if (modelData !== root.effect) root.setEffect(modelData, root.speed)
+            MouseArea {
+              id: effectMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: effectPopup.opened ? effectPopup.close() : effectPopup.open()
+            }
+
+            // Opens upward: the panel sits at the bottom of the screen.
+            Popup {
+              id: effectPopup
+              parent: effectTrigger
+              x: 0
+              y: -height - Style.space(4)
+              width: effectTrigger.width
+              padding: Style.space(1)
+              closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+              height: Math.min(effectColumn.height, Style.space(240)) + 2 * padding
+
+              background: Rectangle {
+                color: Qt.rgba(0, 0, 0, 0.92)
+                radius: Style.cornerRadius
+                border.width: Style.space(1)
+                border.color: root.fg
+              }
+
+              contentItem: Flickable {
+                clip: true
+                contentWidth: width
+                contentHeight: effectColumn.height
+                boundsBehavior: Flickable.StopAtBounds
+
+                Column {
+                  id: effectColumn
+                  width: parent.width
+
+                  Repeater {
+                    model: root.effects
+                    delegate: Rectangle {
+                      required property string modelData
+                      readonly property bool current: modelData === root.effect
+                      width: effectColumn.width
+                      height: Style.spacing.controlHeight
+                      color: current ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.22)
+                                     : (optMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent")
+
+                      Text {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Style.spacing.controlPaddingX
+                        text: modelData
+                        color: root.fg
+                        font.family: root.family
+                        font.pixelSize: Style.font.body
+                        font.bold: parent.current
+                        elide: Text.ElideRight
+                      }
+
+                      MouseArea {
+                        id: optMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                          if (modelData !== root.effect) root.setEffect(modelData, root.speed)
+                          effectPopup.close()
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -654,7 +848,10 @@ Panel {
             integer: true
             tickCount: 6
             value: root.speed
-            onReleased: function(value) { root.setEffect(root.effect, Math.round(value)) }
+            onReleased: function(value) {
+              if (root.rainbow) root.setRainbow(true, Math.round(value))
+              else root.setEffect(root.effect, Math.round(value))
+            }
           }
         }
 

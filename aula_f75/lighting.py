@@ -29,16 +29,19 @@ BRIGHTNESS = (0.1805, 0.3750, 0.6598, 0.7848, 1.0000)
 @dataclass(frozen=True)
 class Effect:
     mode: str = "static"
-    color: tuple[int, int, int] | None = None   # None = the effect's rainbow
+    color: tuple[int, int, int] | None = None   # None = white (red under the rainbow flag)
     brightness: int = 5                          # 0-5
     speed: int = 3                               # 0-5
     direction: int = 0                           # 0 or 1
+    rainbow: bool = False                        # byte 8: the rainbow, on any lit effect
 
     def payload(self) -> bytes:
         """The 16-byte effect payload, shared by cable (0x13) and dongle (05).
-        Static and custom never use the rainbow flag."""
+        Byte 8 is the rainbow flag: it works on any effect that shows light, static
+        included (a still rainbow across the keys; confirmed on the keyboard). Off and
+        custom ignore it."""
         mode = MODES[self.mode]
-        rainbow = 1 if self.color is None and mode not in (0x01, 0x80) else 0
+        rainbow = 1 if self.rainbow and mode not in (0x00, 0x80) else 0
         r, g, b = self.color or ((255, 0, 0) if rainbow else (255, 255, 255))
         return bytes([mode, r, g, b, 0, 0, 0, 0, rainbow, self.brightness, self.speed,
                       self.direction, 0, 0, 0xAA, 0x55])
