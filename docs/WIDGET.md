@@ -34,8 +34,10 @@ Reset to theme, releases it.
 The effect and speed chosen here are remembered over the config's `[lighting]`
 (`f75ctl theme set-effect NAME --speed N`). The rainbow swatch is the colourful effect
 with no colour (`f75ctl theme set-rainbow on`); it stays through brightness, speed and
-theme changes, and picking a colour, Reset to theme or another effect turns it off. Music runs `f75ctl music` in
-the background; switching the background restarts it, and switching it off returns
+theme changes. Picking a colour or Reset to theme while it is on turns it off and
+shows a steady colour (static); choosing another effect turns it off and keeps that effect.
+
+Music runs `f75ctl music` in the background; switching the background restarts it, and switching it off returns
 the keyboard to the theme colour. With the theme-colour background, a theme change
 moves the background to the new colour at once; the keys take the theme colour when
 music stops.

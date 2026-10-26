@@ -304,7 +304,7 @@ class Rainbow(Isolated):
         self.assertEqual(effect.payload()[8], 1)       # the firmware's rainbow flag
         self.assertIs(cfg.load_state()["rainbow"], True)
         self.assertEqual(json.loads((self.state / "effect.json").read_text()),
-                         {"effect": "colourful", "rainbow": True, "speed": 2, "before": {}})
+                         {"effect": "colourful", "rainbow": True, "speed": 2})
 
     def test_works_on_the_dongle(self):
         kb = FakeKb("wireless")
@@ -324,16 +324,18 @@ class Rainbow(Isolated):
         self.assertIs(cfg.load_state()["rainbow"], False)
         self.assertNotIn("effect", cfg.effect_override())     # back to the config's effect
 
-    def test_off_returns_to_the_effect_before_it(self):
-        self.apply("set-rainbow", "off", kb=FakeKb())
-        self.apply("set-effect", "breath", "--speed", "4", kb=FakeKb())
-        self.apply("set-rainbow", "on", kb=FakeKb())
-        self.apply("set-brightness", "3", kb=FakeKb())       # the rainbow stays on
+    def test_colour_while_on_goes_back_to_static(self):
         kb = FakeKb()
+        self.apply("set-brightness", "3", kb=FakeKb())       # the rainbow stays on
         self.apply("apply", "--color", "#ff0000", kb=kb)
-        self.assertEqual((kb.lit[0].mode, kb.lit[0].speed), ("breath", 4))
-        self.assertEqual(cfg.effect_override(), {"effect": "breath", "speed": 4})
+        self.assertEqual((kb.lit[0].mode, kb.lit[0].color), ("static", (255, 0, 0)))
+        self.assertEqual(cfg.effect_override(), {})
 
+    def test_reset_while_on_goes_back_to_static(self):
+        kb = FakeKb()
+        self.apply("set-rainbow", "off", kb=kb)
+        self.assertEqual(kb.lit[-1].mode, "static")
+        self.assertNotIn("effect", cfg.effect_override())
     def test_another_effect_clears_it(self):
         self.apply("set-effect", "breath", kb=FakeKb())
         self.assertNotIn("rainbow", cfg.effect_override())

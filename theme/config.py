@@ -192,16 +192,13 @@ def save_transition(style: str) -> None:
 
 
 def clear_rainbow() -> None:
-    """Turn the rainbow off and go back to the effect and speed chosen before it."""
+    """Turn the rainbow off. A colour picked or a reset while it was on shows a steady
+    colour, so the effect and speed go too; the transition choice stays."""
     data = _read_json(EFFECT_FILE)
     if not isinstance(data, dict) or data.pop("rainbow", None) is None:
         return
-    before = data.pop("before", None)
-    if isinstance(before, dict):
-        for key in ("effect", "speed"):
-            data.pop(key, None)
-            if key in before:
-                data[key] = before[key]
+    for key in ("effect", "speed", "before"):
+        data.pop(key, None)
     if data:
         _write_json(EFFECT_FILE, data)
     else:
@@ -222,9 +219,6 @@ def save_effect(name: str | None, speed: int | None = None, rainbow: bool = Fals
     data = {"effect": name}
     if rainbow:
         data["rainbow"] = True
-        # remember what the rainbow replaced, so turning it off goes back to that
-        data["before"] = (_read_json(EFFECT_FILE) or {}).get("before") if old.get("rainbow") \
-            else {k: old[k] for k in ("effect", "speed") if k in old}
     if "transition" in old:
         data["transition"] = old["transition"]
     if speed is not None:

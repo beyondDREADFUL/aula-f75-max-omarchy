@@ -10,8 +10,9 @@
 - Brightness is a slider like speed (1-5, sent on release).
 - New rainbow colour option: the first swatch of the bright presets shows the firmware's own
   rainbow through the colourful effect (no colour sent), over the cable and the dongle. It
-  stays through brightness, speed and theme changes; picking a colour, Reset to theme or
-  another effect turns it off. New `f75ctl theme set-rainbow on|off [--speed N]`, a
+  stays through brightness, speed and theme changes. Picking a colour or Reset to theme while
+  it is on turns it off and shows a steady colour; choosing another effect turns it off and
+  keeps that effect. New `f75ctl theme set-rainbow on|off [--speed N]`, a
   `rainbow` field in `effect.json` and `status`, and a `rainbow` helper command.
 - New `f75ctl theme status --json`; the widget helper reads it with jq instead of
   parsing the text output.
