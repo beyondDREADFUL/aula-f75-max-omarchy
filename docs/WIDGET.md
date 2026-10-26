@@ -19,7 +19,7 @@ Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 | Keyboard / Theme | the colour the keys have and the theme's colour, side by side; `PINNED` or `CUSTOM` when they differ |
 | COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as "rainbow" in the Keyboard box); a hex field with a live preview and Apply; **Keep this colour**; Reset to theme |
 | LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable |
-| MUSIC | the music visualiser switch (needs the USB cable), with a dark or theme-colour background behind the bars |
+| MUSIC | the music visualiser switch (needs the USB cable), with two dropdowns: the bar colour and what shows behind the bars |
 
 A colour picked here is sent exactly as shown (`apply --exact`). The swatches
 already show what the keys get, and the keyboard's firmware applies its own white
@@ -37,7 +37,7 @@ firmware's rainbow flag on the current effect (`f75ctl theme set-rainbow on|off`
 not change the effect. It stays through brightness, speed, theme changes and choosing
 another effect. Picking a colour or Reset to theme turns it off and keeps the effect.
 
-Music runs `f75ctl music` in the background; switching the background restarts it, and switching it off returns
+Music runs `f75ctl music` in the background; changing the bar colour or the background restarts it (the bars: green-yellow-red, rainbow, reverse-rainbow, gradient, spectrum-cycle or a solid colour; behind them: Dark, theme, spectrum-cycle or a solid colour; with the music off a choice is only remembered), and switching it off returns
 the keyboard to the theme colour. With the theme-colour background, a theme change
 moves the background to the new colour at once; the keys take the theme colour when
 music stops.

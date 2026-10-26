@@ -60,5 +60,32 @@ class FindMusic(unittest.TestCase):
             self.assertIsNone(music_following_theme())
 
 
+# the names the widget's dropdowns offer (AulaF75.qml musicBarOptions / musicBackgroundOptions)
+WIDGET_BARS = ["green-yellow-red", "rainbow", "reverse-rainbow", "gradient", "spectrum-cycle",
+               "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+WIDGET_BACKGROUNDS = ["off", "theme", "spectrum-cycle",
+                      "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+
+
+class WidgetChoices(unittest.TestCase):
+    def test_every_bar_name_draws(self):
+        for name in WIDGET_BARS:
+            self.assertIn(name, music.BAR_COLORS)
+            self.assertEqual(len(music.bar_color(name, 0, 0, 0.0)), 3)
+
+    def test_every_background_name_is_accepted(self):
+        from aula_f75 import cli
+        for name in WIDGET_BACKGROUNDS:
+            self.assertEqual(cli._background(name), name)
+
+    def test_helper_lists_match_the_widget(self):
+        helper = (Path(__file__).parent.parent / "bin" / "aula-f75").read_text()
+        solids = " ".join(music.SOLID)
+        self.assertIn(f'MUSIC_BAR_NAMES="{" ".join(WIDGET_BARS[:5])} $SOLIDS"', helper)
+        self.assertIn(f'SOLIDS="{solids}"', helper)
+        self.assertEqual(WIDGET_BARS[5:], list(music.SOLID))
+        self.assertEqual(WIDGET_BACKGROUNDS[3:], list(music.SOLID))
+
+
 if __name__ == "__main__":
     unittest.main()

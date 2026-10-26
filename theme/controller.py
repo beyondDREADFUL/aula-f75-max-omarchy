@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import signal
 import sys
@@ -95,6 +96,7 @@ def verify(kb, target, brightness) -> bool:
 
 
 PALETTE_KEYS = ("accent", "red", "yellow", "green", "cyan", "blue", "magenta")
+NEAR_COLOUR = 60          # RGB distance below which two swatches look the same
 
 
 def load_config() -> dict:
@@ -107,10 +109,18 @@ def load_config() -> dict:
     return config
 
 
+def _near(a: str, b: str) -> bool:
+    """True when two '#RRGGBB' colours are within NEAR_COLOUR of each other in RGB."""
+    ra, rb = (tuple(int(h[i:i + 2], 16) for i in (1, 3, 5)) for h in (a, b))
+    return math.dist(ra, rb) < NEAR_COLOUR
+
+
 def theme_palette(config: dict, colors: dict, first=None) -> list[tuple[str, str]]:
     """[(theme colour, LED colour)] for the theme's accent and named colours, each through
-    the automatic choice, without repeating a theme or LED colour. `first` (the theme's actual
-    target, which a [theme_overrides] entry can set) replaces the accent's entry."""
+    the automatic choice, without repeating a theme or LED colour, or keeping one whose LED
+    colour looks like one already kept (two near-identical swatches waste a slot). `first`
+    (the theme's actual target, which a [theme_overrides] entry can set) replaces the accent's
+    entry."""
     seen, out = set(), []
     if first:
         seen.update(first)
@@ -121,7 +131,7 @@ def theme_palette(config: dict, colors: dict, first=None) -> list[tuple[str, str
         except (KeyError, ValueError):
             continue
         source, target = hexstr(source), hexstr(vivid(source, config))
-        if source not in seen and target not in seen:
+        if source not in seen and target not in seen and not any(_near(target, t) for _, t in out):
             seen.update((source, target))
             out.append((source, target))
     return out

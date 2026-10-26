@@ -38,6 +38,23 @@ Panel {
   property var palette: []           // [{source, target}] from the theme
   property string previewHex: ""      // what the keys would show for the hex field
   property string musicBackground: "off"
+  property string musicBars: "rainbow"
+  readonly property var musicBarOptions: {
+    const names = ["green-yellow-red", "rainbow", "reverse-rainbow", "gradient", "spectrum-cycle",
+                 "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+    return names.map(function(n) { return { value: n, label: n } })
+  }
+  readonly property var musicBackgroundOptions: {
+    const names = ["off", "theme", "spectrum-cycle",
+                 "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+    return names.map(function(n) { return { value: n, label: n === "off" ? "Dark" : n } })
+  }
+
+  function optionLabel(options, value) {
+    for (let i = 0; i < options.length; i++)
+      if (options[i].value === value) return options[i].label
+    return value
+  }
   property bool batteryWanted: false  // read the battery once the next status is in
   property string message: ""
   property bool failed: false
@@ -49,6 +66,9 @@ Panel {
   readonly property var effects: ["static", "breath", "pulsating", "glittering", "falling",
     "single-on", "single-off", "ripples", "outward", "explode", "launch", "scrolling", "rolling",
     "rotating", "flowing", "tilt", "shuttle", "colourful", "spectrum"]
+  readonly property int dropdownWidth: Style.space(170)   // one width for every dropdown
+  // The keys show the theme colour: one strip instead of the two boxes.
+  readonly property bool sameColour: matches && !rainbow
   readonly property bool wired: devices.indexOf("wired") >= 0
   readonly property bool wireless: devices.indexOf("wireless") >= 0
   readonly property color fg: bar ? bar.foreground : "#cacccc"
@@ -187,6 +207,7 @@ Panel {
       root.devices = result.devices || []
       root.musicOn = result.music === true
       if (root.musicOn && result.musicBackground) root.musicBackground = String(result.musicBackground)
+      if (root.musicOn && result.musicBars) root.musicBars = String(result.musicBars)
       // the battery check needs the connection this status just reported
       if (root.batteryWanted) {
         root.batteryWanted = false
@@ -299,9 +320,23 @@ Panel {
   }
 
   function setMusic(on) {
-    root.act(on ? ["music", "start", root.musicBackground] : ["music", "stop"], "music",
+    root.act(on ? ["music", "start", "--bars", root.musicBars, "--background", root.musicBackground]
+                : ["music", "stop"], "music",
              on ? "Starting the music visualiser…" : "Stopping the music visualiser…",
              on ? "Music on: bars follow the sound" : "Music off, back on the theme colour")
+  }
+
+  // A dropdown change: remembered always, sent only while the music runs (it restarts).
+  // The value one step from `current` in `values` (direction -1 or 1), stopping at the ends.
+  function neighbour(values, current, direction) {
+    var i = values.indexOf(current)
+    return values[Math.max(0, Math.min(values.length - 1, i + direction))]
+  }
+
+  function setMusicColours(bars, background) {
+    root.musicBars = bars
+    root.musicBackground = background
+    if (root.musicOn) root.setMusic(true)
   }
 
   onOpenedChanged: {
@@ -389,6 +424,136 @@ Panel {
   }
 
   // ---- panel ----------------------------------------------------------------
+
+  // Dropdown that opens upward (the panel sits at the bottom of the screen).
+  // The mouse wheel steps to the neighbouring option, clamped at the ends.
+  component OptionDropdown: Item {
+    id: dd
+    property var options: []          // [{ value, label }]
+    property string value: ""         // the selected value
+    property int fieldWidth: Style.space(170)
+    property real turn: 0             // wheel delta not yet turned into a step
+    signal picked(string value)
+
+    width: fieldWidth
+    height: Style.spacing.controlHeight
+
+    Rectangle {
+      id: trigger
+      anchors.fill: parent
+      radius: Style.cornerRadius
+      color: mouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent"
+      border.width: Style.space(1)
+      border.color: popup.opened || mouse.containsMouse ? root.fg : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.45)
+
+      Text {
+        anchors.left: parent.left
+        anchors.right: chevron.left
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.spacing.controlPaddingX
+        anchors.rightMargin: Style.spacing.md
+        text: root.optionLabel(dd.options, dd.value)
+        color: root.fg
+        font.family: root.family
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      Text {
+        id: chevron
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.rightMargin: Style.spacing.controlGap
+        text: "\udb80\udd40"
+        color: Qt.darker(root.fg, 1.2)
+        font.family: root.family
+        font.pixelSize: Style.font.body
+      }
+
+      MouseArea {
+        id: mouse
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: popup.opened ? popup.close() : popup.open()
+        // a wheel notch steps to the neighbouring option; a touchpad's small steps add up
+        onWheel: function(wheel) {
+          dd.turn += wheel.angleDelta.y
+          if (Math.abs(dd.turn) < 120) return
+          var values = dd.options.map(function(o) { return o.value })
+          var next = root.neighbour(values, dd.value, dd.turn > 0 ? -1 : 1)
+          dd.turn = 0
+          if (next !== dd.value) dd.picked(next)
+        }
+      }
+
+      Popup {
+        id: popup
+        parent: trigger
+        x: 0
+        y: -height - Style.space(4)
+        width: trigger.width
+        padding: Style.space(1)
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        height: Math.min(column.height, Style.space(240)) + 2 * padding
+
+        background: Rectangle {
+          color: Qt.rgba(0, 0, 0, 0.92)
+          radius: Style.cornerRadius
+          border.width: Style.space(1)
+          border.color: root.fg
+        }
+
+        contentItem: Flickable {
+          clip: true
+          contentWidth: width
+          contentHeight: column.height
+          boundsBehavior: Flickable.StopAtBounds
+
+          Column {
+            id: column
+            width: parent.width
+
+            Repeater {
+              model: dd.options
+              delegate: Rectangle {
+                required property var modelData
+                readonly property bool current: modelData.value === dd.value
+                width: column.width
+                height: Style.spacing.controlHeight
+                color: current ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.22)
+                               : (optMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent")
+
+                Text {
+                  anchors.left: parent.left
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  anchors.leftMargin: Style.spacing.controlPaddingX
+                  text: modelData.label
+                  color: root.fg
+                  font.family: root.family
+                  font.pixelSize: Style.font.body
+                  font.bold: parent.current
+                  elide: Text.ElideRight
+                }
+
+                MouseArea {
+                  id: optMouse
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    popup.close()
+                    if (!current) dd.picked(modelData.value)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 
   // Swatch row: theme palette or bright presets.
   component SwatchRow: Flow {
@@ -530,8 +695,43 @@ Panel {
           }
         }
 
-        // Keyboard and theme side by side, for reading only.
+        // Keyboard and theme as one strip when they are the same colour.
+        Rectangle {
+          visible: root.sameColour
+          width: parent.width
+          height: Style.space(42)
+          radius: Style.space(6)
+          color: root.themeHex !== "" ? root.themeHex : "transparent"
+          border.width: Math.max(1, Style.space(1))
+          border.color: Qt.darker(root.fg, 1.8)
+
+          Column {
+            anchors.centerIn: parent
+            spacing: Style.space(2)
+
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "KEYBOARD · THEME"
+              color: root.textOn(root.themeHex)
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1.2
+            }
+
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: root.themeHex !== "" ? root.themeHex : "—"
+              color: root.textOn(root.themeHex)
+              font.family: root.family
+              font.pixelSize: Style.font.caption
+            }
+          }
+        }
+
+        // Otherwise keyboard and theme side by side, for reading only.
         Row {
+          visible: !root.sameColour
           width: parent.width
           spacing: Style.space(8)
 
@@ -662,23 +862,29 @@ Panel {
           }
         }
 
+        // Keep switch with the small Reset button beside it.
         LabelledRow {
-          label: "Keep this colour through theme changes"
-          ToggleSwitch {
-            checked: root.pinned
-            foreground: root.fg
-            onToggled: root.setKeep(!root.pinned)
-          }
-        }
+          label: "Keep through theme changes"
+          Row {
+            spacing: Style.space(8)
 
-        Button {
-          width: parent.width
-          text: "Reset to theme"
-          bordered: true
-          foreground: root.fg
-          fontFamily: root.family
-          fontSize: Style.font.caption
-          onClicked: root.resetToTheme()
+            Button {
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Reset"
+              bordered: true
+              foreground: root.fg
+              fontFamily: root.family
+              fontSize: Style.font.caption
+              onClicked: root.resetToTheme()
+            }
+
+            ToggleSwitch {
+              anchors.verticalCenter: parent.verticalCenter
+              checked: root.pinned
+              foreground: root.fg
+              onToggled: root.setKeep(!root.pinned)
+            }
+          }
         }
 
         PanelSeparator { foreground: root.fg }
@@ -717,113 +923,11 @@ Panel {
 
         LabelledRow {
           label: "Effect"
-          Rectangle {
-            id: effectTrigger
-            width: Style.space(150)
-            height: Style.spacing.controlHeight
-            radius: Style.cornerRadius
-            color: effectMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent"
-            border.width: Style.space(1)
-            border.color: effectPopup.opened || effectMouse.containsMouse ? root.fg : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.45)
-
-            Text {
-              anchors.left: parent.left
-              anchors.right: effectChevron.left
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.leftMargin: Style.spacing.controlPaddingX
-              anchors.rightMargin: Style.spacing.md
-              text: root.effect
-              color: root.fg
-              font.family: root.family
-              font.pixelSize: Style.font.body
-              elide: Text.ElideRight
-            }
-
-            Text {
-              id: effectChevron
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              anchors.rightMargin: Style.spacing.controlGap
-              text: "\udb80\udd40"
-              color: Qt.darker(root.fg, 1.2)
-              font.family: root.family
-              font.pixelSize: Style.font.body
-            }
-
-            MouseArea {
-              id: effectMouse
-              anchors.fill: parent
-              hoverEnabled: true
-              cursorShape: Qt.PointingHandCursor
-              onClicked: effectPopup.opened ? effectPopup.close() : effectPopup.open()
-            }
-
-            // Opens upward: the panel sits at the bottom of the screen.
-            Popup {
-              id: effectPopup
-              parent: effectTrigger
-              x: 0
-              y: -height - Style.space(4)
-              width: effectTrigger.width
-              padding: Style.space(1)
-              closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-              height: Math.min(effectColumn.height, Style.space(240)) + 2 * padding
-
-              background: Rectangle {
-                color: Qt.rgba(0, 0, 0, 0.92)
-                radius: Style.cornerRadius
-                border.width: Style.space(1)
-                border.color: root.fg
-              }
-
-              contentItem: Flickable {
-                clip: true
-                contentWidth: width
-                contentHeight: effectColumn.height
-                boundsBehavior: Flickable.StopAtBounds
-
-                Column {
-                  id: effectColumn
-                  width: parent.width
-
-                  Repeater {
-                    model: root.effects
-                    delegate: Rectangle {
-                      required property string modelData
-                      readonly property bool current: modelData === root.effect
-                      width: effectColumn.width
-                      height: Style.spacing.controlHeight
-                      color: current ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.22)
-                                     : (optMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent")
-
-                      Text {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.leftMargin: Style.spacing.controlPaddingX
-                        text: modelData
-                        color: root.fg
-                        font.family: root.family
-                        font.pixelSize: Style.font.body
-                        font.bold: parent.current
-                        elide: Text.ElideRight
-                      }
-
-                      MouseArea {
-                        id: optMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                          if (modelData !== root.effect) root.setEffect(modelData, root.speed)
-                          effectPopup.close()
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+          OptionDropdown {
+            fieldWidth: root.dropdownWidth
+            options: root.effects.map(function(n) { return { value: n, label: n } })
+            value: root.effect
+            onPicked: function(v) { if (v !== root.effect) root.setEffect(v, root.speed) }
           }
         }
 
@@ -888,17 +992,26 @@ Panel {
         }
 
         LabelledRow {
+          label: "Bars"
+          OptionDropdown {
+            fieldWidth: root.dropdownWidth
+            // dimmed while the music is off: the choice is only stored until it starts
+            opacity: root.musicOn ? 1 : 0.5
+            options: root.musicBarOptions
+            value: root.musicBars
+            onPicked: function(v) { root.setMusicColours(v, root.musicBackground) }
+          }
+        }
+
+        LabelledRow {
           label: "Behind the bars"
-          ButtonGroup {
-            options: [{ value: "off", label: "Dark" }, { value: "theme", label: "Theme" }]
+          OptionDropdown {
+            fieldWidth: root.dropdownWidth
+            // dimmed while the music is off: the choice is only stored until it starts
+            opacity: root.musicOn ? 1 : 0.5
+            options: root.musicBackgroundOptions
             value: root.musicBackground
-            foreground: root.fg
-            fontFamily: root.family
-            fontSize: Style.font.caption
-            onChanged: function(value) {
-              root.musicBackground = value
-              if (root.musicOn) root.setMusic(true)
-            }
+            onPicked: function(v) { root.setMusicColours(root.musicBars, v) }
           }
         }
 

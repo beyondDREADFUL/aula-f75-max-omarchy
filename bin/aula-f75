@@ -16,8 +16,12 @@
 #   brightness N                        brightness 1-5
 #   transition none|fade|wave|explode   how the keys change colour over the cable
 #   battery                             battery percent (2.4 GHz dongle only)
-#   music   start [off|theme]           start the music visualiser (USB cable only);
-#                                       theme puts the theme colour behind the bars
+#   music   start [--bars NAME] [--background NAME]
+#                                       start the music visualiser (USB cable only); changing
+#                                       either while it runs restarts it. NAME for bars: any
+#                                       f75ctl music --color name but off; for the background:
+#                                       off, theme, spectrum-cycle or a solid colour.
+#                                       `music start off|theme` still sets the background.
 #   music   stop                        stop it; the keyboard returns to the theme colour
 #
 # --exact uses the colour as written. Without it the controller applies the
@@ -35,6 +39,10 @@ PIN="$STATE_DIR/pin.json"
 MUSIC_PID="$STATE_DIR/music.pid"
 MUSIC_LOG="$STATE_DIR/music.log"
 MUSIC_BG="$STATE_DIR/music.background"
+MUSIC_BARS="$STATE_DIR/music.bars"
+SOLIDS="white red orange yellow green cyan blue purple"
+MUSIC_BAR_NAMES="green-yellow-red rainbow reverse-rainbow gradient spectrum-cycle $SOLIDS"
+MUSIC_BG_NAMES="off theme spectrum-cycle $SOLIDS"
 
 # The pid of the running visualiser, if any.
 music_pid() {
@@ -101,6 +109,7 @@ status)
     music=false
     music_pid >/dev/null && music=true
     music_bg=$(cat "$MUSIC_BG" 2>/dev/null)
+    music_bars=$(cat "$MUSIC_BARS" 2>/dev/null)
     # the source of the colour last applied, which status (the theme's own) doesn't report
     source=$(jq -r '.accent_source // ""' "$STATE" 2>/dev/null)
     # Rounding in the controller can leave a colour a step or two off, which
@@ -112,7 +121,7 @@ status)
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
         --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
         --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
-        --argjson devices "$devices" --arg music_bg "${music_bg:-off}" \
+        --argjson devices "$devices" --arg music_bg "${music_bg:-off}" --arg music_bars "${music_bars:-rainbow}" \
         --arg transition "${transition:-wave}" --argjson rainbow "${rainbow:-false}" '{
         ok: true,
         theme: $theme,
@@ -129,7 +138,8 @@ status)
         rainbow: $rainbow,
         devices: $devices,
         music: $music,
-        musicBackground: $music_bg
+        musicBackground: $music_bg,
+        musicBars: $music_bars
     }'
     ;;
 
@@ -210,23 +220,33 @@ battery)
 music)
     case "${1:-}" in
     start)
-        case "${2:-off}" in
-        off) background=(--background off) ;;
+        shift
+        bars=$(cat "$MUSIC_BARS" 2>/dev/null); bars=${bars:-rainbow}
+        bg=$(cat "$MUSIC_BG" 2>/dev/null); bg=${bg:-off}
+        while [ $# -gt 0 ]; do
+            case "$1" in
+            --bars) [ $# -ge 2 ] || fail "--bars needs a name"; bars=$2; shift 2 ;;
+            --background) [ $# -ge 2 ] || fail "--background needs a name"; bg=$2; shift 2 ;;
+            off | theme) bg=$1; shift ;;      # the old form: music start off|theme
+            *) fail "unknown argument $1" ;;
+            esac
+        done
+        case " $MUSIC_BAR_NAMES " in *" $bars "*) ;; *) fail "unknown bar colour $bars" ;; esac
+        case " $MUSIC_BG_NAMES " in *" $bg "*) ;; *) fail "unknown background $bg" ;; esac
         # theme: f75ctl reads the colour itself and again on SIGHUP, which the controller
         # sends on a theme change, so the background follows the theme
-        theme) background=(--background theme) ;;
-        *) fail "unknown background ${2}" ;;
-        esac
-        if pid=$(music_pid) && [ "$(cat "$MUSIC_BG" 2>/dev/null)" != "${2:-off}" ]; then
-            # other background: stop without handing back to the theme, then start again
+        if pid=$(music_pid) && { [ "$(cat "$MUSIC_BG" 2>/dev/null)" != "$bg" ] ||
+                                 [ "$(cat "$MUSIC_BARS" 2>/dev/null)" != "$bars" ]; }; then
+            # other colours: stop without handing back to the theme, then start again
             kill -USR1 "$pid"
             for _ in $(seq 30); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
         fi
         if ! music_pid >/dev/null; then
             mkdir -p "$STATE_DIR"
-            printf '%s\n' "${2:-off}" >"$MUSIC_BG"
+            printf '%s\n' "$bg" >"$MUSIC_BG"
+            printf '%s\n' "$bars" >"$MUSIC_BARS"
             # setsid detaches it from the widget; it runs until `music stop`
-            nohup setsid "$F75CTL" music "${background[@]}" >"$MUSIC_LOG" 2>&1 </dev/null &
+            nohup setsid "$F75CTL" music --color "$bars" --background "$bg" >"$MUSIC_LOG" 2>&1 </dev/null &
             echo $! >"$MUSIC_PID"
             sleep 1.5
             if ! music_pid >/dev/null; then
@@ -244,7 +264,7 @@ music)
         rm -f "$MUSIC_PID"
         jq -nc '{ok: true, music: false}'
         ;;
-    *) fail "usage: music start [off|theme] | music stop" ;;
+    *) fail "usage: music start [--bars NAME] [--background NAME] | music start off|theme | music stop" ;;
     esac
     ;;
 

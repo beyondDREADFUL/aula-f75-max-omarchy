@@ -1,6 +1,7 @@
 # Changelog
 
 ## 2026-10-26 (widget: wheel, connection, brightness slider, rainbow)
+- Music: the bar colour and the background are dropdowns in the widget (`aula-f75 music start --bars NAME --background NAME`; `status` reports `musicBars`); changing either restarts the visualiser.
 - The bar icon's scroll wheel changes the brightness, one step per notch.
 - The icon dims when no keyboard is connected. New setting **Hide when disconnected**
   (Setup › Plugins) removes it from the bar instead.
