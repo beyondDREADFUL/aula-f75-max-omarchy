@@ -230,6 +230,22 @@ class Apply(Isolated):
         self.assertEqual(code, 0)
         self.assertIn("theme=testtheme accent=#FF0000 (override-exact) target=#FF0000", out)
 
+    def test_speed_and_effect_keep_a_picked_colour(self):
+        self.apply("apply", "--color", "#ff0000", "--exact", kb=FakeKb())
+        kb = FakeKb()
+        self.apply("set-effect", "ripples", "--speed", "4", kb=kb)
+        self.assertEqual((kb.lit[-1].mode, kb.lit[-1].color), ("ripples", (255, 0, 0)))
+        kb = FakeKb()
+        self.apply("set-brightness", "2", kb=kb)
+        self.assertEqual(kb.lit[-1].color, (255, 0, 0))
+
+    def test_theme_apply_drops_the_picked_colour(self):
+        cfg.save_transition("none")           # the fake keyboard can't animate a change
+        self.apply("apply", "--color", "#ff0000", "--exact", kb=FakeKb())
+        kb = FakeKb()
+        self.apply("apply", kb=kb)
+        self.assertNotEqual(kb.lit[-1].color, (255, 0, 0))
+
     def test_not_found_is_skipped(self):
         self.assertEqual(self.apply("apply", error=NotFound("no keyboard"))[0], 0)
         self.assertIn("result=skipped (no keyboard)", self.log())

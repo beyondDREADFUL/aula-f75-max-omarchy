@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -716,15 +717,112 @@ Panel {
 
         LabelledRow {
           label: "Effect"
-          Dropdown {
-            showLabel: false
+          Rectangle {
+            id: effectTrigger
             width: Style.space(150)
-            options: root.effects
-            value: root.effect
-            foreground: root.fg
-            fontFamily: root.family
-            onChanged: function(name) {
-              if (name !== root.effect) root.setEffect(name, root.speed)
+            height: Style.spacing.controlHeight
+            radius: Style.cornerRadius
+            color: effectMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent"
+            border.width: Style.space(1)
+            border.color: effectPopup.opened || effectMouse.containsMouse ? root.fg : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.45)
+
+            Text {
+              anchors.left: parent.left
+              anchors.right: effectChevron.left
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.spacing.controlPaddingX
+              anchors.rightMargin: Style.spacing.md
+              text: root.effect
+              color: root.fg
+              font.family: root.family
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+            }
+
+            Text {
+              id: effectChevron
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.rightMargin: Style.spacing.controlGap
+              text: "\udb80\udd40"
+              color: Qt.darker(root.fg, 1.2)
+              font.family: root.family
+              font.pixelSize: Style.font.body
+            }
+
+            MouseArea {
+              id: effectMouse
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: effectPopup.opened ? effectPopup.close() : effectPopup.open()
+            }
+
+            // Opens upward: the panel sits at the bottom of the screen.
+            Popup {
+              id: effectPopup
+              parent: effectTrigger
+              x: 0
+              y: -height - Style.space(4)
+              width: effectTrigger.width
+              padding: Style.space(1)
+              closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+              height: Math.min(effectColumn.height, Style.space(240)) + 2 * padding
+
+              background: Rectangle {
+                color: Qt.rgba(0, 0, 0, 0.92)
+                radius: Style.cornerRadius
+                border.width: Style.space(1)
+                border.color: root.fg
+              }
+
+              contentItem: Flickable {
+                clip: true
+                contentWidth: width
+                contentHeight: effectColumn.height
+                boundsBehavior: Flickable.StopAtBounds
+
+                Column {
+                  id: effectColumn
+                  width: parent.width
+
+                  Repeater {
+                    model: root.effects
+                    delegate: Rectangle {
+                      required property string modelData
+                      readonly property bool current: modelData === root.effect
+                      width: effectColumn.width
+                      height: Style.spacing.controlHeight
+                      color: current ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.22)
+                                     : (optMouse.containsMouse ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.10) : "transparent")
+
+                      Text {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Style.spacing.controlPaddingX
+                        text: modelData
+                        color: root.fg
+                        font.family: root.family
+                        font.pixelSize: Style.font.body
+                        font.bold: parent.current
+                        elide: Text.ElideRight
+                      }
+
+                      MouseArea {
+                        id: optMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                          if (modelData !== root.effect) root.setEffect(modelData, root.speed)
+                          effectPopup.close()
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

@@ -220,11 +220,13 @@ def _write(args, kb, state, config, target, brightness) -> str:
     return "skipped"
 
 
-def _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified):
+def _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified,
+                  picked=False):
     cfg.save_state({
         "version": STATE_VERSION, "theme": theme, "accent": hexstr(accent),
         "accent_source": source, "target": hexstr(target), "target_rgb": list(target),
         "brightness": brightness, "effect": config["effect"], "rainbow": config["rainbow"],
+        "picked": picked,       # a colour chosen by hand: effect, speed and brightness keep it
         "transport": kb.transport,
         "device_path": kb.path, "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     })
@@ -262,14 +264,19 @@ def cmd_apply(args) -> int:
     except (Rejected, OSError) as exc:
         cfg.log(f"{summary} transport={kb.transport} result=failed ({exc})")
         return 1
-    _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified)
+    _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified,
+                  picked=bool(args.color))
     return 0 if verified != "False" else 1
 
 
 def _reapply(brightness=None) -> int:
-    """`f75ctl theme apply`, optionally forcing a brightness."""
+    """`f75ctl theme apply`, optionally forcing a brightness. A colour chosen by hand (and
+    not pinned) is kept, so a speed or effect change doesn't fall back to the theme."""
     args = build_parser().parse_args(["apply"])
     args.brightness = brightness
+    state = cfg.load_state()
+    if state.get("picked") and cfg.load_pin() is None and state.get("target"):
+        args.color, args.exact = state["target"], True
     return cmd_apply(args)
 
 
