@@ -37,7 +37,6 @@ Panel {
   property var palette: []           // [{source, target}] from the theme
   property string previewHex: ""      // what the keys would show for the hex field
   property string musicBackground: "off"
-  property bool effectsOpen: false    // the effect list is folded out
   property bool batteryWanted: false  // read the battery once the next status is in
   property string message: ""
   property bool failed: false
@@ -312,7 +311,6 @@ Panel {
     hexInput.text = ""
     root.previewHex = ""
     root.message = ""
-    root.effectsOpen = false
   }
 
   Component.onCompleted: Qt.callLater(root.refresh)
@@ -716,40 +714,17 @@ Panel {
           }
         }
 
-        // The effect list folds out inside the panel: a popup would be cut off at the
-        // panel's edge.
         LabelledRow {
           label: "Effect"
-          Button {
-            text: root.effect + (root.effectsOpen ? "  ▴" : "  ▾")
-            bordered: true
+          Dropdown {
+            showLabel: false
+            width: Style.space(150)
+            options: root.effects
+            value: root.effect
             foreground: root.fg
             fontFamily: root.family
-            fontSize: Style.font.caption
-            onClicked: root.effectsOpen = !root.effectsOpen
-          }
-        }
-
-        Flow {
-          visible: root.effectsOpen
-          width: parent.width
-          spacing: Style.space(6)
-
-          Repeater {
-            model: root.effects
-
-            Button {
-              required property string modelData
-              text: modelData
-              selected: modelData === root.effect
-              bordered: true
-              foreground: root.fg
-              fontFamily: root.family
-              fontSize: Style.font.caption
-              onClicked: {
-                root.effectsOpen = false
-                if (modelData !== root.effect) root.setEffect(modelData, root.speed)
-              }
+            onChanged: function(name) {
+              if (name !== root.effect) root.setEffect(name, root.speed)
             }
           }
         }

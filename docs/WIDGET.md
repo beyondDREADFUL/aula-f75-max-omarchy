@@ -18,7 +18,7 @@ Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 | Header | connection (`CABLE` or `2.4G`, with the battery level over 2.4G) |
 | Keyboard / Theme | the colour the keys have and the theme's colour, side by side; `PINNED` or `CUSTOM` when they differ |
 | COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as "rainbow" in the Keyboard box); a hex field with a live preview and Apply; **Keep this colour**; Reset to theme |
-| LIGHT | brightness 1-5 (slider); the effect, picked from a list that folds out inside the panel; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable |
+| LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable |
 | MUSIC | the music visualiser switch (needs the USB cable), with a dark or theme-colour background behind the bars |
 
 A colour picked here is sent exactly as shown (`apply --exact`). The swatches
