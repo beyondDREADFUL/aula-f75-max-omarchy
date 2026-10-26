@@ -82,9 +82,22 @@ root systemctl daemon-reload
 root udevadm control --reload
 root udevadm trigger --subsystem-match=hidraw --action=change
 
+# ---- bar widget ----
+# Enable it once; a shell restart shows it, so only a fresh enable triggers one.
+if command -v omarchy >/dev/null && command -v jq >/dev/null; then
+    enabled=$(omarchy plugin list --json 2>/dev/null \
+        | jq -r '.[] | select(.id == "beyond.aula-f75") | .enabled' || true)
+    if [ "$enabled" != "true" ]; then
+        run_or_print() { if $dry; then echo "+ $*"; else "$@"; fi; }
+        run_or_print omarchy plugin enable beyond.aula-f75
+        run_or_print omarchy restart shell
+    fi
+else
+    echo "Bar widget not enabled: install Omarchy's omarchy command and jq, then re-run ./install.sh"
+fi
+
 echo "Done. Log out and back in once so the 'aula' group applies, then run:"
 echo "  f75ctl theme apply"
-echo "Enable the bar widget with: omarchy plugin enable beyond.aula-f75 && omarchy restart shell"
 
 # optional features: say what is missing, install nothing
 missing=()

@@ -29,11 +29,10 @@ cd aula-f75-max-omarchy
 ./install.sh
 ```
 
-`./install.sh --dry-run` prints the root commands without running them. Log out and back in once so the `aula` group applies, then:
+`./install.sh` does the whole setup, including enabling the bar widget and restarting the shell the first time. `./install.sh --dry-run` prints the root commands and the Omarchy commands without running them. Log out and back in once so the `aula` group applies, then:
 
 ```bash
 f75ctl theme apply
-omarchy plugin enable beyond.aula-f75 && omarchy restart shell
 ```
 
 ## The widget
