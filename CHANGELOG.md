@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-26 (settings, resets, Right Alt)
+- Right Alt is the key right of Space. It was mapped as Right Ctrl (`rctrl`, usage 0xE4),
+  and the Fn and Right Alt grid columns were swapped. A dongle `reset-keymap` turned the
+  key into Right Ctrl. The key is now `ralt` (usage 0xE6) at grid position (5, 9), Fn at
+  (5, 10). There is no Right Ctrl key.
+- New `f75ctl settings --sleep never|1|5|30 --debounce 1-5`: the sleep timer and key
+  debounce. The keyboard can't report them, so both are written each time, and the sleep
+  timer applies on 2.4G.
+- New `f75ctl reset-keyboard --yes` (clears the remaps, keeps the lighting) and
+  `f75ctl factory-reset --yes` (also clears the lighting and settings). Both need the 2.4G
+  dongle and refuse to run without `--yes`.
+- Where these come from: reverse engineering the vendor program, checked on the keyboard
+  (firmware 106). The settings and reset commands were verified over the 2.4G dongle; the
+  settings write also over the cable.
+
 ## 2026-10-25 (fixes from a code review)
 - A keyboard that can't be opened (for example no access before the `aula` group applies)
   no longer ends `f75ctl` or `f75ctl theme` with a traceback: apply logs
