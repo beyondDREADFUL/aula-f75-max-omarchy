@@ -247,7 +247,7 @@ def _save_and_log(kb, summary, theme, accent, source, target, brightness, config
 def cmd_apply(args) -> int:
     if not args.dry_run:
         _record_devices()
-        if args.color:
+        if args.color and not getattr(args, "keep_rainbow", False):
             cfg.clear_rainbow()     # a colour picked on purpose replaces the rainbow
     config = load_config()
     state = cfg.load_state()
@@ -287,6 +287,7 @@ def _reapply(brightness=None) -> int:
     state = cfg.load_state()
     if state.get("picked") and cfg.load_pin() is None and state.get("target"):
         args.color, args.exact = state["target"], True
+        args.keep_rainbow = True    # the colour is only being re-sent, not chosen again
     return cmd_apply(args)
 
 
