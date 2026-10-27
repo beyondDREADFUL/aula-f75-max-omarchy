@@ -46,11 +46,20 @@ Panel {
     "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"])
 
   function barOptionsFrom(names) {
-    return names.map(function(n) { return { value: n, label: n } })
+    return names.map(function(n) { return { value: n, label: root.displayName(n) } })
   }
 
   function backgroundOptionsFrom(names) {
-    return names.map(function(n) { return { value: n, label: n === "off" ? "Dark" : n } })
+    return names.map(function(n) { return { value: n, label: root.displayName(n) } })
+  }
+
+  // The readable label for an option value: "single-on" -> "Single on". A colour sequence
+  // keeps its hyphens, and the dark background is stored as "off".
+  function displayName(value) {
+    var text = String(value)
+    if (text === "off") return "Dark"
+    if (text !== "green-yellow-red") text = text.replace(/-/g, " ")
+    return text.charAt(0).toUpperCase() + text.slice(1)
   }
 
   function optionLabel(options, value) {
@@ -84,10 +93,9 @@ Panel {
   readonly property bool shown: connected || !hideWhenDisconnected
   // Written by every `f75ctl theme apply`, which udev runs on each plug and unplug.
   readonly property string devicesPath: Quickshell.env("HOME") + "/.local/state/omarchy/aula-f75/devices"
-  readonly property string connection: wired ? "CABLE" : wireless ? "2.4G" : "NOT CONNECTED"
   readonly property string tooltipText: devices.length === 0
     ? "Keyboard not connected"
-    : "Keyboard " + (rainbow ? "rainbow" : keyboardHex || "—") + " · " + effect + " · " + brightness + "/5 · "
+    : "Keyboard " + (rainbow ? "rainbow" : keyboardHex || "—") + " · " + displayName(effect) + " · " + brightness + "/5 · "
       + (wired ? "cable" : "2.4G") + (musicOn ? " · music on" : "") + (pinned ? " · pinned" : "")
 
   // Hidden, the bar slot takes no space: it sizes itself from a visible item only.
@@ -108,16 +116,6 @@ Panel {
   function normalize(text) {
     var value = String(text || "").trim().replace(/^#/, "")
     return /^[0-9a-fA-F]{6}$/.test(value) ? "#" + value.toUpperCase() : ""
-  }
-
-  // Readable label colour for text drawn on a swatch.
-  function textOn(hex) {
-    var value = String(hex || "").replace("#", "")
-    if (value.length !== 6) return root.fg
-    var r = parseInt(value.substr(0, 2), 16)
-    var g = parseInt(value.substr(2, 2), 16)
-    var b = parseInt(value.substr(4, 2), 16)
-    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? "#101315" : "#FFFFFF"
   }
 
   // ---- command queue ------------------------------------------------------
@@ -644,7 +642,8 @@ Panel {
         height: width
         radius: width / 2
         color: modelData
-        readonly property bool current: root.normalize(modelData) === root.keyboardHex
+        // while the rainbow is on, only the rainbow swatch is the keys' colour
+        readonly property bool current: !root.rainbow && root.normalize(modelData) === root.keyboardHex
         border.width: current ? Style.space(2) : Math.max(1, Style.space(1))
         border.color: current ? root.fg : Qt.darker(root.fg, 2.0)
 
@@ -681,6 +680,86 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       width: childrenRect.width
       height: childrenRect.height
+    }
+  }
+
+  // Small dim caption line.
+  component Caption: Text {
+    width: parent ? parent.width : implicitWidth
+    color: root.dim
+    font.family: root.family
+    font.pixelSize: Style.font.caption
+    elide: Text.ElideRight
+  }
+
+  readonly property bool statusShown: root.message !== "" && (root.busyMessage || root.failed)
+  readonly property bool busyMessage: /…$/.test(root.message)
+  readonly property bool lowBattery: root.battery >= 0 && root.battery < 20
+  // Title: what the keys show. Pill: the effect. Meta line: how that relates to the theme.
+  readonly property string heroTitle: {
+    if (!root.connected) return "Not connected"
+    if (root.musicOn) return "Music"
+    var colour = root.rainbow ? "Rainbow" : root.sameColour ? "Theme colour" : (root.keyboardHex || "—")
+    return (root.pinned ? "󰐃 " : "") + colour
+  }
+  readonly property string heroDetail: !root.connected ? ""
+    : root.musicOn ? root.displayName(root.musicBars) : root.displayName(root.effect)
+  readonly property string heroMeta: !root.connected ? "Plug in the cable or the 2.4G dongle"
+    : root.musicOn ? "Bars over " + root.displayName(root.musicBackground).toLowerCase()
+    : root.sameColour ? (root.pinned ? "Kept · matches the theme" : "Matches the theme")
+    : (root.pinned ? "Kept · theme " : "Theme ") + root.themeHex
+
+  // The hero's colour chip: the keys' colour, the rainbow bar, or grey.
+  Component {
+    id: heroChip
+    Rectangle {
+      width: Style.space(20)
+      height: Style.space(20)
+      radius: Style.space(5)
+      color: !root.connected ? Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.25)
+        : root.musicOn || root.rainbow ? "transparent"
+        : (root.keyboardHex !== "" ? root.keyboardHex : "transparent")
+      border.width: Math.max(1, Style.space(1))
+      border.color: Qt.darker(root.fg, 1.8)
+
+      Rectangle {
+        visible: root.connected && root.rainbow && !root.musicOn
+        anchors.fill: parent
+        anchors.margins: parent.border.width
+        radius: Math.max(0, parent.radius - parent.border.width)
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0.0; color: "#FF0000" }
+          GradientStop { position: 0.17; color: "#FF8000" }
+          GradientStop { position: 0.33; color: "#FFE000" }
+          GradientStop { position: 0.5; color: "#00D040" }
+          GradientStop { position: 0.67; color: "#00A0FF" }
+          GradientStop { position: 0.83; color: "#8030FF" }
+          GradientStop { position: 1.0; color: "#FF2D95" }
+        }
+      }
+
+      // music drives the keys: a note instead of a colour
+      Text {
+        visible: root.connected && root.musicOn
+        anchors.centerIn: parent
+        text: "󰝚"
+        color: root.fg
+        font.family: root.family
+        font.pixelSize: Style.space(13)
+      }
+    }
+  }
+
+  Component {
+    id: resetControl
+    Button {
+      text: "Reset"
+      bordered: true
+      foreground: root.fg
+      fontFamily: root.family
+      fontSize: Style.font.caption
+      onClicked: root.resetToTheme()
     }
   }
 
@@ -721,36 +800,13 @@ Panel {
             anchors.verticalCenter: parent.verticalCenter
           }
 
-          Text {
-            text: root.connection + (root.battery >= 0 ? " · " + root.battery + "%" : "")
-            color: root.dim
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-            font.bold: true
-            font.letterSpacing: 1.2
+          Row {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-          }
-        }
-
-        // Keyboard and theme as one strip when they are the same colour.
-        Rectangle {
-          visible: root.sameColour
-          width: parent.width
-          height: Style.space(42)
-          radius: Style.space(6)
-          color: root.themeHex !== "" ? root.themeHex : "transparent"
-          border.width: Math.max(1, Style.space(1))
-          border.color: Qt.darker(root.fg, 1.8)
-
-          Column {
-            anchors.centerIn: parent
-            spacing: Style.space(2)
 
             Text {
-              anchors.horizontalCenter: parent.horizontalCenter
-              text: "KEYBOARD · THEME"
-              color: root.textOn(root.themeHex)
+              text: root.wired ? "CABLE" : root.wireless ? "2.4G" : "OFFLINE"
+              color: root.dim
               font.family: root.family
               font.pixelSize: Style.font.caption
               font.bold: true
@@ -758,308 +814,297 @@ Panel {
             }
 
             Text {
-              anchors.horizontalCenter: parent.horizontalCenter
-              text: root.themeHex !== "" ? root.themeHex : "—"
-              color: root.textOn(root.themeHex)
+              visible: !root.wired && root.wireless && root.battery >= 0
+              text: " · " + root.battery + "%"
+              color: root.lowBattery ? Commons.Color.urgent : root.dim
               font.family: root.family
               font.pixelSize: Style.font.caption
+              font.bold: true
+              font.letterSpacing: 1.2
             }
           }
         }
 
-        // Otherwise keyboard and theme side by side, for reading only.
-        Row {
-          visible: !root.sameColour
+        // State at a glance: colour chip, colour and effect, theme relation, reset.
+        PanelHero {
+          foreground: root.fg
+          fontFamily: root.family
+          iconComponent: heroChip
+          title: root.heroTitle
+          detail: root.heroDetail
+          meta: root.heroMeta
+          trailingControl: root.connected && !root.sameColour && !root.musicOn ? resetControl : null
+        }
+
+        // Everything below needs a keyboard.
+        Column {
+          visible: root.connected
           width: parent.width
-          spacing: Style.space(8)
+          spacing: Style.space(10)
 
-          Repeater {
-            model: [
-              { label: root.pinned ? "KEYBOARD · PINNED" : root.matches ? "KEYBOARD" : "KEYBOARD · CUSTOM",
-                hex: root.rainbow ? "" : root.keyboardHex, shown: root.rainbow ? "rainbow" : "" },
-              { label: "THEME", hex: root.themeHex }
-            ]
+          PanelSeparator { foreground: root.fg }
 
-            Rectangle {
-              required property var modelData
-              width: (panelColumn.width - Style.space(8)) / 2
-              height: Style.space(42)
-              radius: Style.space(6)
-              color: modelData.hex !== "" ? modelData.hex : "transparent"
-              border.width: Math.max(1, Style.space(1))
-              border.color: Qt.darker(root.fg, 1.8)
+          // ---- colour ----
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+            enabled: !root.musicOn
+            opacity: root.musicOn ? 0.45 : 1
 
-              Column {
-                anchors.centerIn: parent
-                spacing: Style.space(2)
+            PanelSectionHeader {
+              text: "COLOUR"
+              foreground: root.fg
+              fontFamily: root.family
+            }
 
-                Text {
-                  anchors.horizontalCenter: parent.horizontalCenter
-                  text: modelData.label
-                  color: root.textOn(modelData.hex)
+            Caption {
+              visible: root.musicOn
+              text: "Music is driving the keys"
+            }
+
+            Caption {
+              visible: root.palette.length > 0
+              text: "Theme"
+            }
+
+            SwatchRow {
+              visible: root.palette.length > 0
+              colors: root.palette.map(function(c) { return c.target })
+            }
+
+            Caption { text: "Presets" }
+
+            SwatchRow {
+              withRainbow: true
+              colors: root.brights
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(8)
+
+              Rectangle {
+                width: parent.width - applyButton.width - Style.space(8)
+                height: Style.space(30)
+                radius: Style.space(4)
+                color: "transparent"
+                border.width: Math.max(1, Style.space(1))
+                border.color: Qt.darker(root.fg, 1.8)
+
+                TextInput {
+                  id: hexInput
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.space(10)
+                  anchors.rightMargin: Style.space(10) + previewDot.width
+                  verticalAlignment: TextInput.AlignVCenter
+                  maximumLength: 7
+                  color: root.fg
+                  selectionColor: root.fg
+                  selectedTextColor: root.bg
                   font.family: root.family
                   font.pixelSize: Style.font.caption
-                  font.bold: true
-                  font.letterSpacing: 1.2
+                  onTextEdited: root.requestPreview(text)
+                  Keys.onReturnPressed: root.applyHex()
+                  Keys.onEnterPressed: root.applyHex()
                 }
 
                 Text {
-                  anchors.horizontalCenter: parent.horizontalCenter
-                  text: modelData.hex !== "" ? modelData.hex : modelData.shown || "—"
-                  color: root.textOn(modelData.hex)
+                  anchors.left: parent.left
+                  anchors.leftMargin: Style.space(10)
+                  anchors.verticalCenter: parent.verticalCenter
+                  visible: hexInput.text === ""
+                  text: "#RRGGBB"
+                  color: Qt.darker(root.fg, 1.8)
                   font.family: root.family
                   font.pixelSize: Style.font.caption
                 }
+
+                Rectangle {
+                  id: previewDot
+                  anchors.right: parent.right
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: Style.space(14)
+                  height: width
+                  radius: width / 2
+                  visible: root.previewHex !== ""
+                  color: root.previewHex !== "" ? root.previewHex : "transparent"
+                  border.width: Math.max(1, Style.space(1))
+                  border.color: Qt.darker(root.fg, 1.8)
+                }
+              }
+
+              Button {
+                id: applyButton
+                text: "Apply"
+                bordered: true
+                foreground: root.fg
+                fontFamily: root.family
+                fontSize: Style.font.caption
+                onClicked: root.applyHex()
+              }
+            }
+
+            LabelledRow {
+              label: "Keep when the theme changes"
+              ToggleSwitch {
+                checked: root.pinned
+                foreground: root.fg
+                onToggled: root.setKeep(!root.pinned)
+              }
+            }
+          }
+
+          PanelSeparator { foreground: root.fg }
+
+          // ---- light ----
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+            enabled: !root.musicOn
+            opacity: root.musicOn ? 0.45 : 1
+
+            PanelSectionHeader {
+              text: "LIGHT"
+              foreground: root.fg
+              fontFamily: root.family
+            }
+
+            LabelledRow {
+              label: "Brightness"
+              // Sends on release, like speed; the queue keeps only the latest level.
+              PanelSlider {
+                width: Style.space(170)
+                bar: root.bar
+                minimum: 1
+                maximum: 5
+                step: 1
+                integer: true
+                tickCount: 5
+                value: root.brightness
+                onReleased: function(value) { root.setBrightness(Math.round(value)) }
+              }
+            }
+
+            LabelledRow {
+              label: "Effect"
+              OptionDropdown {
+                fieldWidth: root.dropdownWidth
+                options: root.effects.map(function(n) { return { value: n, label: root.displayName(n) } })
+                value: root.effect
+                onPicked: function(v) { if (v !== root.effect) root.setEffect(v, root.speed) }
+              }
+            }
+
+            LabelledRow {
+              visible: root.effect !== "static"
+              label: "Speed"
+              PanelSlider {
+                width: Style.space(170)
+                bar: root.bar
+                minimum: 0
+                maximum: 5
+                step: 1
+                integer: true
+                tickCount: 6
+                value: root.speed
+                onReleased: function(value) {
+                  if (root.rainbow) root.setRainbow(true, Math.round(value))
+                  else root.setEffect(root.effect, Math.round(value))
+                }
+              }
+            }
+
+            // Only a static-to-static colour change over the cable uses it.
+            LabelledRow {
+              visible: root.effect === "static" && !root.rainbow && root.wired
+              label: "Colour change"
+              ButtonGroup {
+                options: [{ value: "none", label: "None" }, { value: "fade", label: "Fade" },
+                          { value: "wave", label: "Wave" }, { value: "explode", label: "Burst" }]
+                value: root.transition
+                foreground: root.fg
+                fontFamily: root.family
+                fontSize: Style.font.caption
+                onChanged: function(value) { root.setTransition(value) }
+              }
+            }
+          }
+
+          PanelSeparator { foreground: root.fg }
+
+          // ---- music ----
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(musicHeader.implicitHeight, musicSwitch.implicitHeight)
+
+              PanelSectionHeader {
+                id: musicHeader
+                text: "MUSIC"
+                foreground: root.fg
+                fontFamily: root.family
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              ToggleSwitch {
+                id: musicSwitch
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                trackHeight: Style.space(18)
+                cursorPad: Style.space(3)
+                enabled: root.wired || root.musicOn    // music can always be stopped
+                opacity: root.wired ? 1 : 0.5
+                checked: root.musicOn
+                foreground: root.fg
+                onToggled: root.setMusic(!root.musicOn)
+              }
+            }
+
+            Caption {
+              visible: !root.wired
+              text: "Needs the USB cable"
+            }
+
+            LabelledRow {
+              visible: root.wired
+              label: "Bars"
+              OptionDropdown {
+                fieldWidth: root.dropdownWidth
+                // dimmed while the music is off: the choice is only stored until it starts
+                opacity: root.musicOn ? 1 : 0.5
+                options: root.musicBarOptions
+                value: root.musicBars
+                onPicked: function(v) { root.setMusicColours(v, root.musicBackground) }
+              }
+            }
+
+            LabelledRow {
+              visible: root.wired
+              label: "Behind the bars"
+              OptionDropdown {
+                fieldWidth: root.dropdownWidth
+                opacity: root.musicOn ? 1 : 0.5
+                options: root.musicBackgroundOptions
+                value: root.musicBackground
+                onPicked: function(v) { root.setMusicColours(root.musicBars, v) }
               }
             }
           }
         }
 
-        PanelSeparator { foreground: root.fg }
-
-        // ---- colour ----
-        PanelSectionHeader {
-          text: "COLOUR"
-          foreground: root.fg
-          fontFamily: root.family
-        }
-
-        SwatchRow {
-          visible: root.palette.length > 0
-          colors: root.palette.map(function(c) { return c.target })
-        }
-
-        SwatchRow {
-          withRainbow: true
-          colors: root.brights
-        }
-
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
-
-          Rectangle {
-            width: parent.width - applyButton.width - Style.space(8)
-            height: Style.space(30)
-            radius: Style.space(4)
-            color: "transparent"
-            border.width: Math.max(1, Style.space(1))
-            border.color: Qt.darker(root.fg, 1.8)
-
-            TextInput {
-              id: hexInput
-              anchors.fill: parent
-              anchors.leftMargin: Style.space(10)
-              anchors.rightMargin: Style.space(10) + previewDot.width
-              verticalAlignment: TextInput.AlignVCenter
-              maximumLength: 7
-              color: root.fg
-              selectionColor: root.fg
-              selectedTextColor: root.bg
-              font.family: root.family
-              font.pixelSize: Style.font.caption
-              onTextEdited: root.requestPreview(text)
-              Keys.onReturnPressed: root.applyHex()
-              Keys.onEnterPressed: root.applyHex()
-            }
-
-            Text {
-              anchors.left: parent.left
-              anchors.leftMargin: Style.space(10)
-              anchors.verticalCenter: parent.verticalCenter
-              visible: hexInput.text === ""
-              text: "#RRGGBB"
-              color: Qt.darker(root.fg, 1.8)
-              font.family: root.family
-              font.pixelSize: Style.font.caption
-            }
-
-            Rectangle {
-              id: previewDot
-              anchors.right: parent.right
-              anchors.rightMargin: Style.space(8)
-              anchors.verticalCenter: parent.verticalCenter
-              width: Style.space(14)
-              height: width
-              radius: width / 2
-              visible: root.previewHex !== ""
-              color: root.previewHex !== "" ? root.previewHex : "transparent"
-              border.width: Math.max(1, Style.space(1))
-              border.color: Qt.darker(root.fg, 1.8)
-            }
-          }
-
-          Button {
-            id: applyButton
-            text: "Apply"
-            bordered: true
-            foreground: root.fg
-            fontFamily: root.family
-            fontSize: Style.font.caption
-            onClicked: root.applyHex()
-          }
-        }
-
-        // Keep switch with the small Reset button beside it.
-        LabelledRow {
-          label: "Keep through theme changes"
-          Row {
-            spacing: Style.space(8)
-
-            Button {
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Reset"
-              bordered: true
-              foreground: root.fg
-              fontFamily: root.family
-              fontSize: Style.font.caption
-              onClicked: root.resetToTheme()
-            }
-
-            ToggleSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.pinned
-              foreground: root.fg
-              onToggled: root.setKeep(!root.pinned)
-            }
-          }
-        }
-
-        PanelSeparator { foreground: root.fg }
-
-        // ---- light ----
-        PanelSectionHeader {
-          text: "LIGHT"
-          foreground: root.fg
-          fontFamily: root.family
-        }
-
-        Column {
-          width: parent.width
-          spacing: Style.space(4)
-
-          Text {
-            text: "Brightness"
-            color: root.fg
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-          }
-
-          // Sends on release, like speed; the queue keeps only the latest level.
-          PanelSlider {
-            width: parent.width
-            bar: root.bar
-            minimum: 1
-            maximum: 5
-            step: 1
-            integer: true
-            tickCount: 5
-            value: root.brightness
-            onReleased: function(value) { root.setBrightness(Math.round(value)) }
-          }
-        }
-
-        LabelledRow {
-          label: "Effect"
-          OptionDropdown {
-            fieldWidth: root.dropdownWidth
-            options: root.effects.map(function(n) { return { value: n, label: n } })
-            value: root.effect
-            onPicked: function(v) { if (v !== root.effect) root.setEffect(v, root.speed) }
-          }
-        }
-
-        Column {
-          visible: root.effect !== "static"
-          width: parent.width
-          spacing: Style.space(4)
-
-          Text {
-            text: "Speed"
-            color: root.fg
-            font.family: root.family
-            font.pixelSize: Style.font.caption
-          }
-
-          PanelSlider {
-            width: parent.width
-            bar: root.bar
-            minimum: 0
-            maximum: 5
-            step: 1
-            integer: true
-            tickCount: 6
-            value: root.speed
-            onReleased: function(value) {
-              if (root.rainbow) root.setRainbow(true, Math.round(value))
-              else root.setEffect(root.effect, Math.round(value))
-            }
-          }
-        }
-
-        LabelledRow {
-          label: "Transition"
-          ButtonGroup {
-            options: [{ value: "none", label: "None" }, { value: "fade", label: "Fade" },
-                      { value: "wave", label: "Wave" }, { value: "explode", label: "Burst" }]
-            value: root.transition
-            foreground: root.fg
-            fontFamily: root.family
-            fontSize: Style.font.caption
-            onChanged: function(value) { root.setTransition(value) }
-          }
-        }
-
-        PanelSeparator { foreground: root.fg }
-
-        // ---- music ----
-        PanelSectionHeader {
-          text: "MUSIC"
-          foreground: root.fg
-          fontFamily: root.family
-        }
-
-        LabelledRow {
-          label: root.wired || root.musicOn ? "Music visualiser" : "Music visualiser · connect the USB cable"
-          ToggleSwitch {
-            checked: root.musicOn
-            interactive: root.wired || root.musicOn
-            foreground: root.fg
-            onToggled: root.setMusic(!root.musicOn)
-          }
-        }
-
-        LabelledRow {
-          label: "Bars"
-          OptionDropdown {
-            fieldWidth: root.dropdownWidth
-            // dimmed while the music is off: the choice is only stored until it starts
-            opacity: root.musicOn ? 1 : 0.5
-            options: root.musicBarOptions
-            value: root.musicBars
-            onPicked: function(v) { root.setMusicColours(v, root.musicBackground) }
-          }
-        }
-
-        LabelledRow {
-          label: "Behind the bars"
-          OptionDropdown {
-            fieldWidth: root.dropdownWidth
-            // dimmed while the music is off: the choice is only stored until it starts
-            opacity: root.musicOn ? 1 : 0.5
-            options: root.musicBackgroundOptions
-            value: root.musicBackground
-            onPicked: function(v) { root.setMusicColours(root.musicBars, v) }
-          }
-        }
-
+        // Fixed-height status line: text only while busy or on an error.
         Text {
           width: parent.width
           height: lineMetrics.height
-          text: root.message === "" ? " " : root.message
+          text: root.statusShown ? root.message : " "
           maximumLineCount: 1
           elide: Text.ElideRight
-          color: root.failed ? "#E5484D" : root.dim
+          color: root.failed ? Commons.Color.urgent : root.dim
           font.family: root.family
           font.pixelSize: Style.font.caption
         }

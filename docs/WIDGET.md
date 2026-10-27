@@ -15,11 +15,11 @@ Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 
 | Section | What it does |
 |---|---|
-| Header | connection (`CABLE` or `2.4G`, with the battery level over 2.4G) |
-| Keyboard / Theme | one strip when the keys show the theme colour; Keyboard and Theme side by side otherwise; `PINNED` or `CUSTOM` when they differ |
-| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as "rainbow" in the Keyboard box); a hex field with a live preview and Apply; the **Keep through theme changes** switch with a small **Reset** button |
-| LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable |
-| MUSIC | the music visualiser switch (needs the USB cable), with two dropdowns: the bar colour and what shows behind the bars |
+| Header | connection (`CABLE`, `2.4G` with the battery level, in a warning colour below 20%, or `OFFLINE`) |
+| Status | a colour chip (the rainbow as a strip, a note while music plays), then what the keys show: Theme colour, a hex, Rainbow or Music, with a pin mark when kept; the effect (or the bar colours) in a pill; below, how it relates to the theme; **Reset** at the right when the keys differ from the theme. Not connected: only this line, saying to plug in the cable or the dongle |
+| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as a rainbow strip in the Keyboard box); a hex field with a live preview and Apply; the **Keep when the theme changes** switch |
+| LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable, shown only when it applies (static effect, no rainbow, cable connected) |
+| MUSIC | the visualiser switch in the section header (needs the USB cable; over 2.4G the section says so), with two dropdowns: the bar colour and what shows behind the bars. While music plays, COLOUR and LIGHT are locked with "Music is driving the keys" |
 
 A colour picked here is sent exactly as shown (`apply --exact`). The swatches
 already show what the keys get, and the keyboard's firmware applies its own white
@@ -30,7 +30,7 @@ colour again. **Keep through theme changes** shows whether the colour is pinned:
 on pins the colour the keys have now, so it survives theme changes, login and
 reconnects; a colour picked while it is on replaces the pin. Switching it off releases it.
 
-**Reset** (and right-click on the icon) clears a pin, a hand-picked colour and the
+**Reset to theme**, shown under the Keyboard and Theme boxes when the keys differ from the theme (and right-click on the icon), clears a pin, a hand-picked colour and the
 rainbow, and returns to the theme colour. The effect stays.
 
 The effect and speed chosen here are remembered over the config's `[lighting]`

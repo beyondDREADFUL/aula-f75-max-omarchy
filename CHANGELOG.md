@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-27 (widget design)
+- The panel is redesigned around one status line: a colour chip, what the keys show
+  (theme colour, a hex, Rainbow or Music, with a pin mark when kept), the effect, how it
+  relates to the theme, and Reset when the keys differ. It replaces the Keyboard and
+  Theme boxes.
+- The theme colours and presets are labelled. The music switch sits in the Music header;
+  over 2.4G the section says it needs the cable. While music plays, Colour and Light are
+  locked instead of failing with "keyboard busy".
+- The connection label shows the battery over 2.4G in a warning colour below 20%; not
+  connected, the panel shows only the status line. The bottom line shows only progress
+  and errors.
+- Reset to theme shows under the Keyboard and Theme boxes, and only when the keys differ
+  from the theme; the Keep row is just the switch again.
+- Dropdowns show readable names (Static, Single on, Spectrum cycle, Dark); the commands
+  are unchanged.
+- The Transition row shows only when a colour change would animate (static effect, no
+  rainbow, cable connected).
+- While the rainbow is on, the Keyboard box says RAINBOW with a rainbow strip, and only
+  the rainbow swatch is marked.
+
 ## 2026-10-27 (audit fixes)
 - Reset to theme really returns to the theme colour after a picked colour. Reset also clears
   the pin and the rainbow; the effect stays. New `f75ctl theme reset`.

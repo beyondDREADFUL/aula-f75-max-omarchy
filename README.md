@@ -41,11 +41,11 @@ A keyboard icon in the bar. Left-click opens the panel, right-click returns the 
 
 | Section | What it does |
 |---|---|
-| Header | how the keyboard is connected, its battery over 2.4G |
-| Keyboard / Theme | one strip when the keys show the theme colour; Keyboard and Theme side by side otherwise |
-| Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, the **Keep through theme changes** switch with a small **Reset** button |
+| Header | how the keyboard is connected; over 2.4G the battery, in a warning colour below 20% |
+| Status | one line: what the keys show (theme colour, a hex, Rainbow or Music), the effect, how it relates to the theme, and **Reset** when the keys differ from the theme |
+| Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, the **Keep when the theme changes** switch |
 | Light | brightness 1-5 (slider), effect, speed for animated effects, and the transition between colours |
-| Music | the visualiser switch (USB cable only), the bar colour and the background behind the bars (dropdowns) |
+| Music | the visualiser switch in the section header (USB cable only), the bar colour and the background behind the bars; while music plays, Colour and Light are locked |
 
 Commands to bind to keys (for example with `bindd` in `~/.config/hypr/bindings.conf`):
 
