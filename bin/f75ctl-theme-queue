@@ -35,7 +35,6 @@ fi
         sleep 0.35
         current="$(cat "$STATE_DIR/request" 2>/dev/null)"
         "$F75CTL" theme apply
-        printf '%s\n' "$current" > "$STATE_DIR/applied" 2>/dev/null || true
 
         # Release before the final check: a request arriving at the exit
         # boundary can then start a fresh worker instead of being lost.

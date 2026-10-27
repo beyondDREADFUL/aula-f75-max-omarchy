@@ -19,8 +19,10 @@ done
 run() { if $dry; then echo "+ $*"; else "$@"; fi; }
 root() { if $dry; then echo "+ sudo $*"; else sudo "$@"; fi; }
 
-# Stop the music visualiser if the widget started it.
-pid=$(cat "$HOME/.local/state/omarchy/aula-f75/music.pid" 2>/dev/null || true)
+# Stop the music visualiser if the widget started it. The pid file is "PID" or
+# "PID STARTTIME"; only the pid is needed here.
+pid=$(head -n1 "$HOME/.local/state/omarchy/aula-f75/music.pid" 2>/dev/null | cut -d' ' -f1 || true)
+case "$pid" in *[!0-9]*) pid= ;; esac
 [ -n "$pid" ] && grep -q f75ctl "/proc/$pid/cmdline" 2>/dev/null && run kill -TERM "$pid"
 
 run rm -f "$HOME/.local/bin/f75ctl" "$HOME/.local/bin/f75ctl-theme-queue"
@@ -39,7 +41,9 @@ fi
 
 root rm -f /etc/udev/rules.d/65-aula-f75-max.rules /etc/systemd/system/aula-f75.service
 root systemctl daemon-reload
+# re-run the rules on existing nodes so they lose the 'aula' group access now
 root udevadm control --reload
+root udevadm trigger --subsystem-match=hidraw --action=change
 
 if $purge; then
     run rm -rf "$HOME"/.config/omarchy/plugins/.beyond.aula-f75.bak.*

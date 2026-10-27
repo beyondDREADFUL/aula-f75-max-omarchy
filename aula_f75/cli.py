@@ -112,7 +112,7 @@ def cmd_music(kb, a):
                 return
             print(f"music: background #{opts.background}", flush=True)
         reload(opts)
-    fps, stopped_by = music.run(kb, opts, on_start=lambda what: print(f"music: {what}"),
+    fps, stopped_by = music.run(kb, opts, on_start=lambda what: print(f"music: {what}", flush=True),
                                 reload=reload)
     print(f"{fps:.1f} fps", flush=True)
     kb.close()
@@ -198,7 +198,7 @@ def build_parser():
     s.add_argument("file")
     s.set_defaults(fn=cmd_gif)
 
-    s = sub.add_parser("music", help="spectrum visualiser from system sound (Ctrl+C stops)")
+    s = sub.add_parser("music", help="spectrum visualiser from system sound; needs cava and the USB cable (Ctrl+C stops)")
     s.add_argument("--test", action="store_true", help="moving test pattern, no audio needed")
     s.add_argument("--seconds", type=float, help="stop after this many seconds")
     s.add_argument("--fps", type=float, default=20)

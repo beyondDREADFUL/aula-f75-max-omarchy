@@ -6,13 +6,13 @@
 #                                       brightness, connected transports, music and its
 #                                       background
 #   palette                             the theme's colours and what the keys would show
-#   targets [--exact] #HEX...           colour the keys would show for each, no writes
 #   preview [--exact] #HEX              same for a single colour
 #   apply   [--exact] [--pin] #HEX      set the keyboard
 #   reset                               clear any pin, return to the theme colour
 #   rainbow [on|off] [SPEED]            the firmware's rainbow flag on the current effect;
 #                                       a colour or reset turns it off
 #   effect  NAME|default [SPEED]        show the accent as this effect (default: config's)
+#   choices                             the effect, bar and background names (one source)
 #   brightness N                        brightness 1-5
 #   transition none|fade|wave|explode   how the keys change colour over the cable
 #   battery                             battery percent (2.4 GHz dongle only)
@@ -23,6 +23,9 @@
 #                                       off, theme, spectrum-cycle or a solid colour.
 #                                       `music start off|theme` still sets the background.
 #   music   stop                        stop it; the keyboard returns to the theme colour
+#
+# Exit codes of the controller with --strict, as used here: 0 applied, 3 nothing applied
+# because the keyboard is missing or busy (reported as {ok:false, error:...}), else failed.
 #
 # --exact uses the colour as written. Without it the controller applies the
 # theme's saturation and lightness limits, which tint neutrals such as white.
@@ -40,16 +43,61 @@ MUSIC_PID="$STATE_DIR/music.pid"
 MUSIC_LOG="$STATE_DIR/music.log"
 MUSIC_BG="$STATE_DIR/music.background"
 MUSIC_BARS="$STATE_DIR/music.bars"
-SOLIDS="white red orange yellow green cyan blue purple"
-MUSIC_BAR_NAMES="green-yellow-red rainbow reverse-rainbow gradient spectrum-cycle $SOLIDS"
-MUSIC_BG_NAMES="off theme spectrum-cycle $SOLIDS"
+THEME_LOG="$STATE_DIR/theme.log"
+CHOICES=""
 
-# The pid of the running visualiser, if any.
+# The controller's lists of effects, bars and backgrounds, read once per run.
+load_choices() {
+    [ -n "$CHOICES" ] && return 0
+    CHOICES=$(controller choices --json 2>/dev/null) && jq -e '.bars and .backgrounds' <<<"$CHOICES" >/dev/null 2>&1 \
+        || { CHOICES=""; fail "could not read the choices"; }
+}
+
+# in_choices LIST NAME: is NAME in the controller's list (effects, bars, backgrounds)?
+in_choices() { jq -e --arg v "$2" ".$1 | index(\$v) != null" <<<"$CHOICES" >/dev/null 2>&1; }
+
+# Field 22 of /proc/PID/stat, the process start time. The comm field may hold spaces and
+# parentheses, so cut after the last ')': field 22 is then the 20th word.
+proc_start() {
+    local stat fields
+    stat=$(cat "/proc/$1/stat" 2>/dev/null) || return 1
+    read -ra fields <<<"${stat##*)}"
+    [ -n "${fields[19]:-}" ] && echo "${fields[19]}"
+}
+
+# The pid of the running visualiser, if any. music.pid holds `PID STARTTIME`; both must match
+# the live process (a reused pid fails the start time) and its command line must be f75ctl
+# music. A bare `PID` (older file) is accepted by the command line check alone.
 music_pid() {
-    local pid
-    pid=$(cat "$MUSIC_PID" 2>/dev/null) || return 1
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && grep -q f75ctl "/proc/$pid/cmdline" 2>/dev/null \
-        && echo "$pid"
+    local pid="" start="" cmdline now
+    { read -r pid start _ <"$MUSIC_PID"; } 2>/dev/null || true
+    [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null || return 1
+    cmdline=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null)
+    [[ $cmdline == *f75ctl* && $cmdline == *music* ]] || return 1
+    if [ -n "$start" ]; then
+        now=$(proc_start "$pid") && [ "$now" = "$start" ] || return 1
+    fi
+    echo "$pid"
+}
+
+# Run a controller command with --strict. Exit 3 means nothing was applied because the
+# keyboard is missing or busy; the last line of theme.log says which.
+run_strict() {
+    local message=$1 code reason last
+    shift
+    controller "$@" --strict >/dev/null 2>&1
+    code=$?
+    [ "$code" -eq 0 ] && return 0
+    if [ "$code" -eq 3 ]; then
+        reason="keyboard not connected or busy"
+        last=$(tail -n 1 "$THEME_LOG" 2>/dev/null)
+        case $last in
+        *result=deferred*) reason="keyboard busy" ;;
+        *result=skipped*) reason="keyboard not connected" ;;
+        esac
+        fail "$reason"
+    fi
+    fail "$message"
 }
 
 fail() {
@@ -105,7 +153,12 @@ status)
                | map(tostring) | join("\u001f")' <<<"$status" 2>/dev/null
     )
     [ -n "$theme" ] || fail "could not read the theme colour"
-    devices=$(jq -c '.devices // []' <<<"$status")
+    devices=$(jq -c 'if (.devices | type) == "array" then .devices else [] end' <<<"$status" 2>/dev/null)
+    [ -n "$devices" ] || devices='[]'
+    # --argjson values must be valid JSON: integers and booleans, else a default
+    [[ $brightness =~ ^[0-9]+$ ]] || brightness=0
+    [[ $speed =~ ^[0-9]+$ ]] || speed=3
+    [[ $rainbow == true ]] || rainbow=false
     music=false
     music_pid >/dev/null && music=true
     music_bg=$(cat "$MUSIC_BG" 2>/dev/null)
@@ -119,10 +172,10 @@ status)
         matches=true
     fi
     jq -nc --arg theme "$theme" --arg keyboard "$keyboard" --arg source "$source" --arg pinned "$pinned" \
-        --argjson matches "$matches" --argjson brightness "${brightness:-0}" --arg transport "$transport" \
-        --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "${speed:-3}" \
+        --argjson matches "$matches" --argjson brightness "$brightness" --arg transport "$transport" \
+        --arg effect "${effect:-static}" --argjson music "$music" --argjson speed "$speed" \
         --argjson devices "$devices" --arg music_bg "${music_bg:-off}" --arg music_bars "${music_bars:-rainbow}" \
-        --arg transition "${transition:-wave}" --argjson rainbow "${rainbow:-false}" '{
+        --arg transition "${transition:-wave}" --argjson rainbow "$rainbow" '{
         ok: true,
         theme: $theme,
         keyboard: $keyboard,
@@ -143,14 +196,6 @@ status)
     }'
     ;;
 
-targets)
-    for hex in "$@"; do
-        valid_hex "$hex" || continue
-        target=$(dry_target "$hex")
-        [ -n "$target" ] && printf '%s %s\n' "$hex" "$target"
-    done | jq -R -nc '{ok: true, map: ([inputs | split(" ") | {(.[0]): .[1]}] | add // {})}'
-    ;;
-
 preview)
     valid_hex "${1:-}" || fail "invalid colour"
     target=$(dry_target "$1")
@@ -160,17 +205,22 @@ preview)
 
 apply)
     valid_hex "${1:-}" || fail "invalid colour"
-    pin_args=()
-    if $pin; then pin_args=(--pin); else controller unpin 2>/dev/null; fi
-    controller apply ${exact[@]+"${exact[@]}"} ${pin_args[@]+"${pin_args[@]}"} --color "$1" >/dev/null 2>&1 || fail "keyboard apply failed"
+    # without --pin, --unpin clears an earlier pin only after the apply succeeded
+    pin_args=(--unpin)
+    if $pin; then pin_args=(--pin); fi
+    run_strict "keyboard apply failed" apply ${exact[@]+"${exact[@]}"} "${pin_args[@]}" --color "$1"
     jq -nc '{ok: true}'
     ;;
 
 reset)
-    controller unpin 2>/dev/null
-    # set-rainbow off clears the rainbow (the effect stays) and reapplies the theme colour
-    controller set-rainbow off >/dev/null 2>&1 || fail "keyboard apply failed"
+    # clears the pin, the rainbow (the effect stays) and a picked colour, then applies the theme
+    run_strict "keyboard apply failed" reset
     jq -nc '{ok: true}'
+    ;;
+
+choices)
+    load_choices
+    jq -c '{ok: true} + .' <<<"$CHOICES"
     ;;
 
 palette)
@@ -184,8 +234,7 @@ rainbow)
     case "${1:-}" in on|off) state=$1; shift ;; esac    # no argument means on
     speed_args=()
     [ -n "${1:-}" ] && speed_args=(--speed "$1")
-    controller set-rainbow "$state" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
-        || fail "could not set the rainbow"
+    run_strict "could not set the rainbow" set-rainbow "$state" ${speed_args[@]+"${speed_args[@]}"}
     jq -nc '{ok: true}'
     ;;
 
@@ -193,8 +242,7 @@ effect)
     [ -n "${1:-}" ] || fail "no effect given"
     speed_args=()
     [ -n "${2:-}" ] && speed_args=(--speed "$2")
-    controller set-effect "$1" ${speed_args[@]+"${speed_args[@]}"} >/dev/null 2>&1 \
-        || fail "could not set effect $1"
+    run_strict "could not set effect $1" set-effect "$1" ${speed_args[@]+"${speed_args[@]}"}
     jq -nc '{ok: true}'
     ;;
 
@@ -206,7 +254,7 @@ transition)
 
 brightness)
     [[ ${1:-} =~ ^[1-5]$ ]] || fail "brightness must be 1-5"
-    controller set-brightness "$1" >/dev/null 2>&1 || fail "could not set brightness"
+    run_strict "could not set brightness" set-brightness "$1"
     jq -nc '{ok: true}'
     ;;
 
@@ -231,8 +279,9 @@ music)
             *) fail "unknown argument $1" ;;
             esac
         done
-        case " $MUSIC_BAR_NAMES " in *" $bars "*) ;; *) fail "unknown bar colour $bars" ;; esac
-        case " $MUSIC_BG_NAMES " in *" $bg "*) ;; *) fail "unknown background $bg" ;; esac
+        load_choices
+        in_choices bars "$bars" || fail "unknown bar colour $bars"
+        in_choices backgrounds "$bg" || fail "unknown background $bg"
         # theme: f75ctl reads the colour itself and again on SIGHUP, which the controller
         # sends on a theme change, so the background follows the theme
         if pid=$(music_pid) && { [ "$(cat "$MUSIC_BG" 2>/dev/null)" != "$bg" ] ||
@@ -243,16 +292,26 @@ music)
         fi
         if ! music_pid >/dev/null; then
             mkdir -p "$STATE_DIR"
-            printf '%s\n' "$bg" >"$MUSIC_BG"
-            printf '%s\n' "$bars" >"$MUSIC_BARS"
-            # setsid detaches it from the widget; it runs until `music stop`
-            nohup setsid "$F75CTL" music --color "$bars" --background "$bg" >"$MUSIC_LOG" 2>&1 </dev/null &
-            echo $! >"$MUSIC_PID"
-            sleep 1.5
-            if ! music_pid >/dev/null; then
+            # setsid detaches it from the widget; it runs until `music stop`. Unbuffered,
+            # so the start line reaches the log at once.
+            PYTHONUNBUFFERED=1 nohup setsid "$F75CTL" music --color "$bars" --background "$bg" >"$MUSIC_LOG" 2>&1 </dev/null &
+            started=$!
+            printf '%s %s\n' "$started" "$(proc_start "$started")" >"$MUSIC_PID"
+            # up to ~4 s for the visualiser's start line, or for it to exit
+            confirmed=false
+            for _ in $(seq 20); do
+                if grep -q '^music: .*Ctrl+C to stop' "$MUSIC_LOG" 2>/dev/null; then confirmed=true; break; fi
+                kill -0 "$started" 2>/dev/null || break
+                sleep 0.2
+            done
+            if ! $confirmed || ! music_pid >/dev/null; then
+                kill -TERM "$started" 2>/dev/null
+                rm -f "$MUSIC_PID"
                 error=$(grep -m1 -i 'f75ctl:\|error' "$MUSIC_LOG" | sed 's/^f75ctl: //')
                 fail "${error:-music did not start}"
             fi
+            printf '%s\n' "$bg" >"$MUSIC_BG"
+            printf '%s\n' "$bars" >"$MUSIC_BARS"
         fi
         jq -nc '{ok: true, music: true}'
         ;;
@@ -269,7 +328,7 @@ music)
     ;;
 
 *)
-    echo "usage: aula-f75 status|palette|targets|preview|apply|reset|rainbow|effect|transition|brightness|battery|music" >&2
+    echo "usage: aula-f75 status|palette|preview|apply|reset|rainbow|effect|transition|brightness|choices|battery|music" >&2
     exit 2
     ;;
 esac

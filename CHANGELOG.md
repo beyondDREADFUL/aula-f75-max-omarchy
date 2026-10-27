@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-10-27 (audit fixes)
+- Reset to theme really returns to the theme colour after a picked colour. Reset also clears
+  the pin and the rainbow; the effect stays. New `f75ctl theme reset`.
+- The widget reports "keyboard not connected" or "keyboard busy" instead of claiming success.
+- The shared keyboard lock moved to `~/.local/state/omarchy/aula-f75/device.lock`. The
+  service and the session used different locks before. The lock is refused unless its folder
+  is private and owned by you.
+- The systemd unit is hardened: read-only home except the state directory, no new privileges,
+  hidraw only, a 60 s timeout.
+- The dongle is matched by its product string `2.4G Dongle` and usage page 0xFF60 (`05ac:024f`
+  is an Apple id that other devices reuse). Dongle reads are bounded.
+- Music can always be stopped.
+- `install.sh --dry-run` is a real preview: it prints every command, root and user-level, and
+  runs none of them.
+- Uninstall re-runs the udev rules, so device access is reset at once.
+- New `f75ctl theme choices [--json]`, `apply --unpin`, and `--strict` (exit 3 when the keyboard
+  was not connected or busy; without it those cases exit 0).
+
 ## 2026-10-26 (widget: wheel, connection, brightness slider, rainbow)
 - Music: the bar colour and the background are dropdowns in the widget (`aula-f75 music start --bars NAME --background NAME`; `status` reports `musicBars`); changing either restarts the visualiser.
 - The bar icon's scroll wheel changes the brightness, one step per notch.
@@ -12,8 +30,11 @@
 - New rainbow colour option: the first swatch of the bright presets toggles the firmware's
   rainbow flag (payload byte 8) on the current effect, over the cable and the dongle; the
   effect does not change. It stays through brightness, speed, theme changes and choosing
-  another effect. Picking a colour or Reset to theme turns it off and keeps the effect. New `f75ctl theme set-rainbow on|off [--speed N]`, a
-  `rainbow` field in `effect.json` and `status`, and a `rainbow` helper command.
+  another effect. Picking a colour or Reset turns it off and keeps the effect. New
+  `f75ctl theme set-rainbow on|off [--speed N]`, a `rainbow` field in `effect.json` and
+  `status`, and a `rainbow` helper command.
+- The effect is a dropdown that opens upward (the panel sits at the bottom of the screen).
+  The bar colour and the background are dropdowns too.
 - New `f75ctl theme status --json`; the widget helper reads it with jq instead of
   parsing the text output.
 - `f75ctl` runs with `/usr/bin/python3`, so a mise or other Python on the PATH can't
@@ -128,7 +149,7 @@
   effects) and `[lcd] clock` (sync the LCD clock on every wired apply). v1 keys that no
   longer apply are ignored.
 - New `f75ctl`: effects, per-key colours (also over the dongle), remaps and macros with
-  key combos in one layer, LCD clock and images, music visualiser (cava or built-in,
+  key combos in one layer, LCD clock and images, music visualiser (cava,
   colour backgrounds), battery.
 - udev rule: also grants the LCD image interface; the dongle rule matches its command
   interface only.
@@ -145,7 +166,7 @@
 
 ## 2026-10-22 (later)
 - Theme overrides reworked. They follow each theme's own accent so the keyboard matches the desktop, with warm and purple values corrected for the underglow's weak red so they no longer drift to green or blue. Exceptions where the accent cannot show on LEDs: Kanagawa (indigo from the wallpaper), Fireside (campfire orange) and the grey themes (soft whites).
-- Investigated animated theme changes (cross-fade, per-key wave, firmware modes); not adopted. Findings are in the handbook (section 19).
+- Investigated animated theme changes (cross-fade, per-key wave, firmware modes); not adopted. Findings are in the handbook (§14).
 - Pinned colours: `apply --pin --color HEX` keeps a colour across theme changes,
   login and reconnects until `unpin`. The widget has a Keep this colour switch.
 - Fixed a brief flash of an old colour on the effect LEDs at every wired apply:

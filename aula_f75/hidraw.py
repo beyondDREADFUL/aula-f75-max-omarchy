@@ -26,10 +26,31 @@ class Node:
     vendor: int
     product: int
     interface: int        # USB bInterfaceNumber
+    name: str = ""        # the USB device's product string ("" if it has none)
+    usage_page: int | None = None   # the report descriptor's first usage page
+
+
+def usage_page(descriptor: bytes) -> int | None:
+    """The usage page the report descriptor opens with (its first Usage Page item, e.g.
+    06 60 ff = 0xFF60), or None if the first item is something else."""
+    if not descriptor:
+        return None
+    size = {0: 0, 1: 1, 2: 2, 3: 4}[descriptor[0] & 0x03]
+    if descriptor[0] & 0xFC != 0x04 or len(descriptor) < 1 + size:
+        return None
+    return int.from_bytes(descriptor[1:1 + size], "little")
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return ""
 
 
 def nodes() -> list[Node]:
-    """Every hidraw node with its USB ids and interface number."""
+    """Every hidraw node with its USB ids, interface number, product string and usage
+    page."""
     found = []
     for entry in sorted(SYSFS.glob("hidraw*")):
         try:
@@ -41,14 +62,28 @@ def nodes() -> list[Node]:
             interface = int((entry / "device/../bInterfaceNumber").read_text(), 16)
         except (OSError, StopIteration, ValueError):
             continue
-        found.append(Node(f"/dev/{entry.name}", vendor, product, interface))
+        # the USB device (above the interface) carries the product string
+        name = _read(entry / "device/../../product")
+        try:
+            page = usage_page((entry / "device/report_descriptor").read_bytes())
+        except OSError:
+            page = None
+        found.append(Node(f"/dev/{entry.name}", vendor, product, interface, name, page))
     return found
 
 
-def find(vendor: int, product: int, interface: int) -> str | None:
+def find(vendor: int, product: int, interface: int, name: str | None = None,
+         page: int | None = None) -> str | None:
+    """The first node with these ids and interface; name and page, when given, must also
+    match its product string and usage page."""
     for node in nodes():
-        if (node.vendor, node.product, node.interface) == (vendor, product, interface):
-            return node.path
+        if (node.vendor, node.product, node.interface) != (vendor, product, interface):
+            continue
+        if name is not None and node.name != name:
+            continue
+        if page is not None and node.usage_page != page:
+            continue
+        return node.path
     return None
 
 

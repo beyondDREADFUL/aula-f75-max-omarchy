@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import tomllib
 from datetime import datetime
 from pathlib import Path
@@ -33,7 +34,6 @@ DEFAULTS = {
     "effect": "static",             # any lighting mode that takes a colour
     "default_brightness": 5,
     "speed": 3,
-    "rainbow": False,               # widget only: the firmware's rainbow flag on the current effect
     "direction": 0,
     "transition": "wave",           # how the keys change colour over the cable: none, fade,
     "transition_time": 1.0,         #   wave or explode; seconds
@@ -102,7 +102,6 @@ def load_config(path: Path | None = None) -> dict:
             config["lcd_clock"] = bool(lcd["clock"])
     except (TypeError, ValueError) as exc:
         log(f"config value error: {exc}; using defaults for the rest")
-    config["rainbow"] = bool(config["rainbow"]) and config["effect"] not in NO_COLOR_EFFECTS
     overrides = data.get("theme_overrides", {})
     if isinstance(overrides, dict):
         config["theme_overrides"] = {str(k): str(v) for k, v in overrides.items()}
@@ -116,12 +115,28 @@ def _read_json(path: Path):
         return None
 
 
-def _write_json(path: Path, data) -> None:
+def _atomic_write(path: Path, text: str) -> None:
+    """Write text to path through a unique temp file in STATE_DIR (0600), so concurrent
+    writers never share a temp name; the temp file is removed on error."""
     STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    fd, name = tempfile.mkstemp(dir=STATE_DIR, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(name, path)
+    except BaseException:
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+        raise
+
+
+def _write_json(path: Path, data) -> None:
+    _atomic_write(path, json.dumps(data, indent=2) + "\n")
 
 
 def load_state() -> dict:
@@ -142,11 +157,7 @@ def save_devices(transports) -> None:
             return
     except OSError:
         pass
-    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    tmp = DEVICES_FILE.with_suffix(".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, DEVICES_FILE)
+    _atomic_write(DEVICES_FILE, text)
 
 
 def load_pin() -> dict | None:
@@ -186,8 +197,7 @@ def effect_override() -> dict:
 
 def save_transition(style: str) -> None:
     """Store the widget's transition style, keeping its effect choice."""
-    data = _read_json(EFFECT_FILE)
-    data = data if isinstance(data, dict) else {}
+    data = _read_data()
     data["transition"] = style
     _write_json(EFFECT_FILE, data)
 
@@ -226,11 +236,10 @@ def save_rainbow(on: bool, speed: int | None = None) -> None:
     _store(data)
 
 
-def save_effect(name: str | None, speed: int | None = None, rainbow: bool | None = None) -> None:
+def save_effect(name: str | None, speed: int | None = None) -> None:
     """Store the widget's effect (and speed), or None to go back to the config. The
-    transition choice and the rainbow flag are kept; pass rainbow to change the flag."""
+    transition choice and the rainbow flag are kept."""
     old = effect_override()
-    flag = old.get("rainbow", False) if rainbow is None else rainbow
     data = {}
     if name is not None:
         data["effect"] = name
@@ -238,7 +247,7 @@ def save_effect(name: str | None, speed: int | None = None, rainbow: bool | None
             data["speed"] = min(max(int(speed), 0), 5)
         elif "speed" in old:
             data["speed"] = old["speed"]       # changing the effect keeps the chosen speed
-    if flag:
+    if old.get("rainbow"):
         data["rainbow"] = True
     if "transition" in old:
         data["transition"] = old["transition"]

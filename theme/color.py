@@ -6,6 +6,7 @@ chosen colour is sent as is; nothing here compensates for the LEDs.
 from __future__ import annotations
 
 import colorsys
+import math
 import re
 
 # Saturated accents (>= KEEP_SATURATION) are kept; muted ones keep their hue with
@@ -40,9 +41,13 @@ def parse_color(value: str) -> RGB:
         if len(parts) < 3:
             raise ValueError(f"bad rgb() colour: {value!r}")
         try:
-            rgb = [int(float(p)) for p in parts[:3]]
+            nums = [float(p) for p in parts[:3]]
         except ValueError as exc:
             raise ValueError(f"bad rgb() colour: {value!r}") from exc
+        # inf/nan would make int() raise OverflowError/ValueError; huge values are nonsense
+        if not all(math.isfinite(n) and -1e6 <= n <= 1e6 for n in nums):
+            raise ValueError(f"bad rgb() colour: {value!r}")
+        rgb = [int(n) for n in nums]
         return tuple(max(0, min(255, c)) for c in rgb)  # type: ignore[return-value]
     text = text.lower().removeprefix("#").removeprefix("0x")
     if len(text) == 3 and all(c in "0123456789abcdef" for c in text):

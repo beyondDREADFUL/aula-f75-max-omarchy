@@ -323,6 +323,121 @@ class Apply(Isolated):
         self.assertTrue((self.state / "devices").exists())
 
 
+class StrictExit(Apply):
+    def test_default_exit_is_zero_when_skipped_or_deferred(self):
+        self.assertEqual(self.apply("apply", error=NotFound("no keyboard"))[0], 0)
+        self.assertEqual(self.apply("apply", error=Busy("busy"))[0], 0)
+
+    def test_strict_exits_3_when_skipped_or_deferred(self):
+        for command in (["apply"], ["set-effect", "breath"], ["set-brightness", "3"],
+                        ["set-rainbow", "on"], ["reset"]):
+            for error, word in ((NotFound("no keyboard"), "skipped"), (Busy("busy"), "deferred")):
+                code, _ = self.apply(*command, "--strict", error=error)
+                self.assertEqual(code, 3, (command, word))
+                self.assertIn(f"result={word}", self.log().splitlines()[-1])
+
+    def test_strict_still_exits_1_on_failure_and_0_on_success(self):
+        self.assertEqual(self.apply("apply", "--strict", kb=FakeKb(fail=Rejected("nak")))[0], 1)
+        self.assertEqual(self.apply("apply", "--strict", kb=FakeKb())[0], 0)
+
+
+class Reset(Apply):
+    def test_reset_returns_to_the_theme_after_a_picked_colour(self):
+        cfg.save_transition("none")
+        self.apply("apply", "--color", "#ff0000", "--exact", kb=FakeKb())
+        self.assertIs(cfg.load_state()["picked"], True)
+        kb = FakeKb()
+        self.assertEqual(self.apply("reset", kb=kb)[0], 0)
+        self.assertEqual(kb.lit[-1].color, tuple(cfg.load_state()["target_rgb"]))
+        self.assertNotEqual(kb.lit[-1].color, (255, 0, 0))
+        self.assertIs(cfg.load_state()["picked"], False)
+
+    def test_reset_clears_pin_and_rainbow_but_keeps_effect_speed_transition(self):
+        cfg.save_effect("breath", 2)
+        cfg.save_transition("fade")
+        cfg.save_rainbow(True)
+        self.apply("apply", "--color", "#00ff00", "--exact", "--pin", kb=FakeKb())
+        self.assertIsNotNone(cfg.load_pin())
+        kb = FakeKb()
+        self.apply("reset", kb=kb)
+        self.assertIsNone(cfg.load_pin())
+        self.assertEqual(cfg.effect_override(), {"effect": "breath", "speed": 2,
+                                                 "transition": "fade"})
+        self.assertEqual((kb.lit[-1].mode, kb.lit[-1].rainbow), ("breath", False))
+
+
+class UnpinAfterApply(Apply):
+    def test_unpin_only_after_a_successful_apply(self):
+        cfg.save_pin("#00ff00", True)
+        failing = FakeKb(fail=Rejected("nak"))
+        self.assertEqual(self.apply("apply", "--color", "#ff0000", "--unpin", kb=failing)[0], 1)
+        self.assertIsNotNone(cfg.load_pin())
+        self.assertEqual(self.apply("apply", "--color", "#ff0000", "--unpin",
+                                    error=Busy("busy"))[0], 0)
+        self.assertIsNotNone(cfg.load_pin())            # deferred: nothing applied
+        self.assertEqual(self.apply("apply", "--color", "#ff0000", "--unpin", "--exact",
+                                    kb=FakeKb())[0], 0)
+        self.assertIsNone(cfg.load_pin())
+
+    def test_unpin_does_not_clear_a_new_pin(self):
+        self.apply("apply", "--color", "#ff0000", "--pin", "--unpin", kb=FakeKb())
+        self.assertEqual(cfg.load_pin()["color"], "#ff0000")
+
+
+class BadInput(Isolated):
+    def run_err(self, *argv):
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            return self.run_main(*argv)[0], err.getvalue()
+
+    def test_bad_theme_toml_is_an_error_not_a_traceback(self):
+        (self.state / "theme/colors.toml").write_text("accent = [\n")
+        code, err = self.run_err("palette")
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("f75ctl theme: "))
+
+    def test_corrupt_state_brightness_falls_back(self):
+        args = controller.build_parser().parse_args(["apply"])
+        config = dict(CONFIG, rainbow=False)
+        for bad in ("lots", None, [3], float("inf"), 99, -4):
+            kb = FakeKb()
+            kb.transport = "wireless"
+            got = controller._choose_brightness(args, kb, {"brightness": bad}, config)
+            self.assertTrue(1 <= got <= 5, bad)
+        kb.transport = "wireless"
+        self.assertEqual(controller._choose_brightness(args, kb, {"brightness": "x"}, config),
+                         config["default_brightness"])
+
+
+class Choices(Isolated):
+    def test_lists(self):
+        from aula_f75 import music
+        code, out = self.run_main("choices", "--json")
+        data = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual(set(data), {"effects", "bars", "backgrounds"})
+        self.assertNotIn("off", data["effects"])
+        self.assertNotIn("custom", data["effects"])
+        self.assertEqual(data["effects"][:2], ["static", "single-on"])
+        self.assertEqual(data["bars"], [b for b in music.BAR_COLORS if b != "off"])
+        self.assertEqual(data["backgrounds"][:3], ["off", "theme", "spectrum-cycle"])
+        self.assertEqual(data["backgrounds"][3:], list(music.SOLID))
+
+
+class AtomicWrites(StateDir):
+    def test_unique_temp_files_mode_and_cleanup(self):
+        path = Path(self.dir.name) / "state.json"
+        with mock.patch.object(cfg, "STATE_FILE", path):
+            cfg.save_state({"a": 1})
+        self.assertEqual(oct(path.stat().st_mode & 0o777), "0o600")
+        self.assertEqual([p.name for p in Path(self.dir.name).glob("*.tmp")], [])
+        with mock.patch.object(cfg.os, "replace", side_effect=OSError("boom")), \
+                self.assertRaises(OSError):
+            cfg._write_json(path, {"b": 2})
+        self.assertEqual([p.name for p in Path(self.dir.name).glob("*.tmp")], [])
+        self.assertEqual(json.loads(path.read_text()), {"a": 1})
+
+
 class Rainbow(Isolated):
     apply = Apply.apply
 

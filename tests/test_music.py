@@ -1,15 +1,19 @@
 """The visualiser reloads its options on SIGHUP between frames; the controller finds it."""
+import io
+import json
 import os
 import signal
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from contextlib import redirect_stdout
 from unittest import mock
 
 from theme import config as cfg
+from theme import controller
 from theme.controller import music_following_theme
-from aula_f75 import music
+from aula_f75 import lighting, music
 
 
 class FakeKb:
@@ -50,6 +54,25 @@ class FindMusic(unittest.TestCase):
         (self.state / "music.pid").write_text(f"{pid}\n")
         (self.state / "music.background").write_text(f"{background}\n")
 
+    def test_pid_file_start_time_must_match(self):
+        pid = os.getpid()
+        start = controller.proc_start_time(pid)
+        self.assertTrue(start and start.isdigit())
+        cmd = b"python3\0f75ctl\0music\0--color"
+        with mock.patch.object(Path, "read_bytes", return_value=cmd):
+            self.write(f"{pid} {start}", "theme")
+            self.assertEqual(music_following_theme(), pid)
+            self.write(f"{pid} {int(start) + 1}", "theme")      # a reused pid
+            self.assertIsNone(music_following_theme())
+        with mock.patch.object(Path, "read_bytes", return_value=b"python3\0f75ctl\0theme"):
+            self.write(f"{pid} {start}", "theme")               # not the visualiser
+            self.assertIsNone(music_following_theme())
+
+    def test_start_time_survives_parentheses_in_the_command_name(self):
+        stat = "1 (a b) c) S " + " ".join(str(i) for i in range(4, 60))
+        with mock.patch.object(Path, "read_text", return_value=stat):
+            self.assertEqual(controller.proc_start_time(1), "22")
+
     def test_only_an_f75ctl_process_with_the_theme_background(self):
         self.assertIsNone(music_following_theme())                  # no files
         self.write(os.getpid(), "theme")                            # not f75ctl
@@ -60,31 +83,29 @@ class FindMusic(unittest.TestCase):
             self.assertIsNone(music_following_theme())
 
 
-# the names the widget's dropdowns offer (AulaF75.qml musicBarOptions / musicBackgroundOptions)
-WIDGET_BARS = ["green-yellow-red", "rainbow", "reverse-rainbow", "gradient", "spectrum-cycle",
-               "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
-WIDGET_BACKGROUNDS = ["off", "theme", "spectrum-cycle",
-                      "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
-
-
 class WidgetChoices(unittest.TestCase):
+    def choices(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(controller.main(["choices", "--json"]), 0)
+        return json.loads(out.getvalue())
+
     def test_every_bar_name_draws(self):
-        for name in WIDGET_BARS:
+        for name in self.choices()["bars"]:
             self.assertIn(name, music.BAR_COLORS)
             self.assertEqual(len(music.bar_color(name, 0, 0, 0.0)), 3)
 
     def test_every_background_name_is_accepted(self):
         from aula_f75 import cli
-        for name in WIDGET_BACKGROUNDS:
+        for name in self.choices()["backgrounds"]:
             self.assertEqual(cli._background(name), name)
 
-    def test_helper_lists_match_the_widget(self):
-        helper = (Path(__file__).parent.parent / "bin" / "aula-f75").read_text()
-        solids = " ".join(music.SOLID)
-        self.assertIn(f'MUSIC_BAR_NAMES="{" ".join(WIDGET_BARS[:5])} $SOLIDS"', helper)
-        self.assertIn(f'SOLIDS="{solids}"', helper)
-        self.assertEqual(WIDGET_BARS[5:], list(music.SOLID))
-        self.assertEqual(WIDGET_BACKGROUNDS[3:], list(music.SOLID))
+    def test_choices_shape_and_source(self):
+        data = self.choices()
+        self.assertEqual(list(data), ["effects", "bars", "backgrounds"])
+        self.assertEqual(data["bars"], [b for b in music.BAR_COLORS if b != "off"])
+        self.assertEqual(data["backgrounds"], ["off", "theme", "spectrum-cycle", *music.SOLID])
+        self.assertEqual(data["effects"], [m for m in lighting.MODES if m not in ("off", "custom")])
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ you ──> f75ctl light|keycolors|remap|music|... ───┤                 
 
 | Part | Role |
 |---|---|
-| `aula_f75/` | Protocol library, standard library only. `hidraw.py` (find nodes, ioctls), `device.py` (cable and dongle behind one interface, the lock), `layout.py`, `lighting.py`, `keymap.py`, `lcd.py`, `music.py`, `cli.py` (`f75ctl`) |
+| `aula_f75/` | Protocol library, standard library only. `hidraw.py` (find nodes, ioctls), `device.py` (cable and dongle behind one interface, the lock), `layout.py`, `lighting.py`, `keymap.py`, `lcd.py`, `music.py`, `transition.py`, `cli.py` (`f75ctl`) |
 | `theme/` | Theme accent to keyboard: `color.py` (colour choice), `config.py` (config, state, pin, theme), `controller.py` (the `f75ctl theme` command) |
 | `bin/` | Thin entry points: `f75ctl` (with `f75ctl theme`), `f75ctl-theme-queue` (hooks), `aula-f75` (widget helper) |
 | `AulaF75.qml`, `manifest.json` | Bar widget (docs/WIDGET.md) |
@@ -409,25 +409,32 @@ soft white that keeps their hue (warm if none); lightness is held in
 | Path | Content |
 |---|---|
 | `~/.config/omarchy/aula-f75/config.toml` | config (`config.example.toml` documents every key); never overwritten by install |
-| `~/.local/state/omarchy/aula-f75/state.json` | last apply: theme, accent, source, target, brightness, effect, transport |
+| `~/.local/state/omarchy/aula-f75/state.json` | last apply: theme, accent, source, target, `target_rgb`, brightness, effect, `rainbow`, `picked` (a colour chosen by hand), transport |
 | `.../pin.json` | pinned colour, if any |
-| `.../effect.json` | effect, speed and `rainbow` (bool, any effect except off and custom) chosen in the widget (override `[lighting]`) |
-| `.../music.pid`, `music.log`, `music.background` | the visualiser started from the widget, and its background (`off` or `theme`) |
+| `.../effect.json` | effect, speed, `rainbow` (bool, any effect except off and custom) and `transition` chosen in the widget (override `[lighting]`) |
+| `.../music.pid`, `music.log`, `music.background`, `music.bars` | the visualiser started from the widget: `music.pid` holds `PID STARTTIME` (both checked against the live process); `music.background` and `music.bars` are its two dropdown choices |
 | `.../devices` | connected transports (`wired`, `wireless`, both or `none`), written by every apply and watched by the widget |
 | `.../theme.log` | one line per apply |
-| `$XDG_RUNTIME_DIR/aula-f75.lock` | the keyboard lock |
+| `.../device.lock` | the keyboard lock, shared by the session and the systemd service; refused if the state folder is not a private directory owned by you |
 
 ---
 
 ## 11. Commands
 
 ```bash
-f75ctl theme apply [--color HEX [--exact] [--pin]] [--brightness N] [--verify] [--dry-run]
+f75ctl theme apply [--color HEX [--exact] [--pin] | --unpin] [--brightness N] [--verify] [--strict] [--dry-run]
+f75ctl theme reset                 clear the pin, the rainbow and a picked colour; apply the theme colour
 f75ctl theme unpin | status [--json] [--read-table] | read | set-brightness N
+f75ctl theme choices [--json]      effect, bar and background names (JSON; the widget's lists)
 f75ctl theme set-rainbow on|off [--speed N]   rainbow flag on the current effect, or off
 f75ctl theme set-effect NAME|default [--speed N]   widget's effect, over the config's
 f75ctl theme set-transition none|fade|wave|explode
 f75ctl theme palette    the theme's colours as the keys would show them
+
+`--strict` (on apply, reset, set-effect, set-rainbow, set-brightness) exits 3 when the
+keyboard was not connected or busy, so nothing was applied. Without it those cases exit 0,
+so the theme hook and the systemd service never fail. `--unpin` on apply clears an earlier
+pin after the apply succeeds, unless `--pin` is given.
 
 f75ctl light <mode> [-c RRGGBB] [-b 0-5] [-s 0-5] [-d 0|1]
 f75ctl demo | keycolors esc=ff0000 ... [--default RRGGBB]
@@ -451,7 +458,14 @@ missing.
 `install.sh` copies `aula_f75/` and `theme/` to `~/.local/share/aula-f75/`,
 the commands to `~/.local/bin`, the hooks and the widget; with sudo it adds the `aula`
 group, the udev rule (cable interfaces 2 and 3, dongle interface 3) and the one-shot unit.
-`uninstall.sh` removes all of it (`--purge` also config and state).
+`uninstall.sh` removes all of it (`--purge` also config and state) and re-runs the udev
+rules so the keyboard loses the `aula` group access at once.
+
+The systemd unit runs sandboxed: the home directory is read-only except the state
+directory, no new privileges, and only hidraw devices are allowed. It has a 60 s timeout.
+The dongle rule also requires the USB product string `2.4G Dongle`, because `05ac:024f`
+is an Apple id that other devices reuse; `f75ctl` checks the same string and the vendor
+usage page 0xFF60 on the dongle's command interface.
 
 Checks:
 

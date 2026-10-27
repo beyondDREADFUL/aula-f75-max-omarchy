@@ -11,3 +11,16 @@ SupplementaryGroups=aula
 Environment=HOME=@HOME@
 WorkingDirectory=@HOME@
 ExecStart=@HOME@/.local/bin/f75ctl theme apply
+TimeoutStartSec=60
+# f75ctl reads ~/.local/share/aula-f75, ~/.config and the Omarchy theme, and writes only
+# its state dir (state, log, keyboard lock) and the hidraw nodes. install.sh creates the
+# state dir; the leading '-' keeps a missing one from failing the unit before f75ctl can
+# say what is wrong.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=-@HOME@/.local/state/omarchy/aula-f75
+DeviceAllow=char-hidraw rw
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes

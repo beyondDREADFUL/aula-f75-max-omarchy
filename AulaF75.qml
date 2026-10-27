@@ -39,14 +39,17 @@ Panel {
   property string previewHex: ""      // what the keys would show for the hex field
   property string musicBackground: "off"
   property string musicBars: "rainbow"
-  readonly property var musicBarOptions: {
-    const names = ["green-yellow-red", "rainbow", "reverse-rainbow", "gradient", "spectrum-cycle",
-                 "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+  // Option lists: these defaults hold until the helper's `choices` reply replaces them.
+  property var musicBarOptions: root.barOptionsFrom(["green-yellow-red", "rainbow", "reverse-rainbow",
+    "gradient", "spectrum-cycle", "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"])
+  property var musicBackgroundOptions: root.backgroundOptionsFrom(["off", "theme", "spectrum-cycle",
+    "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"])
+
+  function barOptionsFrom(names) {
     return names.map(function(n) { return { value: n, label: n } })
   }
-  readonly property var musicBackgroundOptions: {
-    const names = ["off", "theme", "spectrum-cycle",
-                 "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"]
+
+  function backgroundOptionsFrom(names) {
     return names.map(function(n) { return { value: n, label: n === "off" ? "Dark" : n } })
   }
 
@@ -63,7 +66,7 @@ Panel {
 
   readonly property string helperPath: String(Qt.resolvedUrl("bin/aula-f75")).replace(/^file:\/\//, "")
   readonly property var brights: ["#FF0000", "#FF8000", "#FFD000", "#00C853", "#00A0FF", "#8839EF", "#FF2D95"]
-  readonly property var effects: ["static", "breath", "pulsating", "glittering", "falling",
+  property var effects: ["static", "breath", "pulsating", "glittering", "falling",
     "single-on", "single-off", "ripples", "outward", "explode", "launch", "scrolling", "rolling",
     "rotating", "flowing", "tilt", "shuttle", "colourful", "spectrum"]
   readonly property int dropdownWidth: Style.space(170)   // one width for every dropdown
@@ -130,24 +133,44 @@ Panel {
     root.pump()
   }
 
+  // The entry being run lives in helperProcess.current, so its handler is still known when
+  // the output arrives. The queue advances only after that result is handled.
   function pump() {
-    if (helperProcess.running || root.queue.length === 0) return
+    if (helperProcess.running || helperProcess.current || root.queue.length === 0) return
     var next = root.queue[0]
     root.queue = root.queue.slice(1)
-    helperProcess.handler = next.handler
-    helperProcess.key = next.key
+    helperProcess.handled = false
+    helperProcess.current = next
     helperProcess.command = [root.helperPath].concat(next.args)
     helperProcess.running = true
+  }
+
+  // Run the current entry's handler once, with the helper's result.
+  function handleResult(result) {
+    var entry = helperProcess.current
+    if (!entry || helperProcess.handled) return
+    helperProcess.handled = true
+    if (entry.handler) entry.handler(result)
+  }
+
+  // The process has exited: if it printed nothing, report that, then take the next entry.
+  function finishCurrent() {
+    if (helperProcess.running) return
+    root.handleResult({ ok: false, error: "helper failed" })
+    helperProcess.current = null
+    root.pump()
   }
 
   // A brightness step still waiting or running: a status read now would carry the
   // old level and undo the steps the wheel has already shown.
   function brightnessPending() {
-    if (helperProcess.running && helperProcess.key === "brightness") return true
+    var entry = helperProcess.current
+    if (entry && !helperProcess.handled && entry.key === "brightness") return true
     return root.queue.some(function(item) { return item.key === "brightness" })
   }
 
   function parse(text) {
+    if (text === "") return { ok: false, error: "helper failed" }
     try {
       return JSON.parse(text)
     } catch (error) {
@@ -157,17 +180,14 @@ Panel {
 
   Process {
     id: helperProcess
-    property var handler: null
-    property string key: ""
+    property var current: null
+    property bool handled: false
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: {
-        var handler = helperProcess.handler
-        if (handler) handler(root.parse(text.trim()))
-      }
+      onStreamFinished: root.handleResult(root.parse(text.trim()))
     }
     onRunningChanged: {
-      if (!running) Qt.callLater(root.pump)
+      if (!running) Qt.callLater(root.finishCurrent)
     }
   }
 
@@ -219,6 +239,19 @@ Panel {
   function loadPalette() {
     root.enqueue(["palette"], "palette", function(result) {
       if (result.ok) root.palette = result.colors || []
+    })
+  }
+
+  // The option lists come from the helper; the defaults stay if it is older or fails.
+  function loadChoices() {
+    root.enqueue(["choices"], "choices", function(result) {
+      if (!result.ok) return
+      if (Array.isArray(result.effects) && result.effects.length > 0)
+        root.effects = result.effects.map(String)
+      if (Array.isArray(result.bars) && result.bars.length > 0)
+        root.musicBarOptions = root.barOptionsFrom(result.bars.map(String))
+      if (Array.isArray(result.backgrounds) && result.backgrounds.length > 0)
+        root.musicBackgroundOptions = root.backgroundOptionsFrom(result.backgrounds.map(String))
     })
   }
 
@@ -298,11 +331,13 @@ Panel {
 
   // The rainbow is a flag on the current effect, not an effect of its own. Speed changes
   // while it is on go through here too, so they keep it.
+  // Its own queue key: an effect click after it must not replace it, and a newer rainbow
+  // command (a speed change) replaces an older one, so the latest value wins.
   function setRainbow(on, speed) {
     root.rainbow = on
     if (speed !== undefined) root.speed = speed
     root.act(["rainbow", on ? "on" : "off"].concat(speed === undefined ? [] : [String(speed)]),
-             "effect", on ? "Rainbow…" : "Rainbow off…", on ? "Rainbow" : "Rainbow off")
+             "rainbow", on ? "Rainbow…" : "Rainbow off…", on ? "Rainbow" : "Rainbow off")
   }
 
   function setEffect(name, speed) {
@@ -326,13 +361,13 @@ Panel {
              on ? "Music on: bars follow the sound" : "Music off, back on the theme colour")
   }
 
-  // A dropdown change: remembered always, sent only while the music runs (it restarts).
   // The value one step from `current` in `values` (direction -1 or 1), stopping at the ends.
   function neighbour(values, current, direction) {
     var i = values.indexOf(current)
     return values[Math.max(0, Math.min(values.length - 1, i + direction))]
   }
 
+  // A dropdown change: remembered always, sent only while the music runs (it restarts).
   function setMusicColours(bars, background) {
     root.musicBars = bars
     root.musicBackground = background
@@ -349,7 +384,10 @@ Panel {
     root.message = ""
   }
 
-  Component.onCompleted: Qt.callLater(root.refresh)
+  Component.onCompleted: {
+    Qt.callLater(root.refresh)
+    Qt.callLater(root.loadChoices)
+  }
 
   // ---- connection -----------------------------------------------------------
   // The devices file changes on every plug and unplug, so the widget follows the

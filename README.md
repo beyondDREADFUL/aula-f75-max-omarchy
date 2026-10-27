@@ -17,7 +17,7 @@ Makes the **AULA F75 Max** keyboard follow your [Omarchy](https://omarchy.org) t
 ## Requirements
 
 - An AULA F75 Max and Omarchy. Tested on Omarchy 4.0.6 (Arch, Hyprland); other versions are untested.
-- `python3` 3.11+ and `jq` (widget).
+- `/usr/bin/python3` 3.11+ (f75ctl runs it directly) and `jq` (widget).
 - Optional: [`cava`](https://github.com/karlstav/cava) for the music visualiser (`sudo pacman -S cava`) and `python-pillow` for LCD images. `install.sh` lists the ones that are missing.
 - `install.sh` needs sudo once, for a udev rule, a systemd one-shot unit and an `aula` group.
 
@@ -29,7 +29,7 @@ cd aula-f75-max-omarchy
 ./install.sh
 ```
 
-`./install.sh` does the whole setup, including enabling the bar widget and restarting the shell the first time. `./install.sh --dry-run` prints the root commands and the Omarchy commands without running them. Log out and back in once so the `aula` group applies, then:
+`./install.sh` does the whole setup. The first time, it enables the bar widget and restarts the shell, if `omarchy` and `jq` are installed; otherwise it prints what to install. `./install.sh --dry-run` prints every command, root and user-level, without running any of them. Log out and back in once so the `aula` group applies, then:
 
 ```bash
 f75ctl theme apply
@@ -42,8 +42,8 @@ A keyboard icon in the bar. Left-click opens the panel, right-click returns the 
 | Section | What it does |
 |---|---|
 | Header | how the keyboard is connected, its battery over 2.4G |
-| Keyboard / Theme | the keys' colour next to the theme's |
-| Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, **Keep this colour** (pin it through theme changes), Reset to theme |
+| Keyboard / Theme | one strip when the keys show the theme colour; Keyboard and Theme side by side otherwise |
+| Colour | the theme's colours, bright presets (the first toggles the firmware's rainbow on the current effect), a hex field, the **Keep through theme changes** switch with a small **Reset** button |
 | Light | brightness 1-5 (slider), effect, speed for animated effects, and the transition between colours |
 | Music | the visualiser switch (USB cable only), the bar colour and the background behind the bars (dropdowns) |
 
