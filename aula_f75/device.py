@@ -5,8 +5,10 @@ Cable (0c45:800a): 64-byte feature reports on interface 3, framed as
 Each packet is echoed; command packets come back with byte 3 set to 01 when accepted.
 LCD images go as 4096-byte output reports on interface 2.
 
-Dongle (05ac:024f, interface 3): 32-byte output reports [cmd, len, offset, data...,
-checksum = sum of bytes 0-30], answered by input reports that can lag several messages.
+Dongle (05ac:024f, interface 3): an Apple id that other devices also use, so the node must
+also carry the product string "2.4G Dongle" and the vendor usage page 0xFF60. 32-byte
+output reports [cmd, len, offset, data..., checksum = sum of bytes 0-30], answered by
+input reports that can lag several messages.
 
 Every opened keyboard holds an exclusive lock, so the accent controller, f75ctl and music
 mode never interleave packets (interleaving corrupts transactions).
@@ -15,6 +17,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import stat
 import time
 from pathlib import Path
 
@@ -24,6 +27,7 @@ from .lcd import CHUNK
 
 WIRED = (0x0C45, 0x800A)
 DONGLE = (0x05AC, 0x024F)
+DONGLE_NAME, DONGLE_PAGE = "2.4G Dongle", 0xFF60   # USB product string, interface-3 usage page
 CMD_IFACE, SCREEN_IFACE = 3, 2
 
 PACKET_DELAY = 0.035   # vendor cmd_delaytime; the reply is read after it
@@ -68,13 +72,19 @@ def settings_block(sleep: int, debounce: int) -> bytes:
 
 
 def lock_path() -> Path:
-    base = os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/aula-f75-{os.getuid()}"
-    Path(base).mkdir(parents=True, exist_ok=True)
-    return Path(base) / "aula-f75.lock"
+    """One path for the session (widget, hooks, music) and the systemd service, which has
+    no XDG_RUNTIME_DIR but does set HOME."""
+    return Path.home() / ".local/state/omarchy/aula-f75/device.lock"
 
 
 def _lock(timeout: float) -> int:
-    fd = os.open(lock_path(), os.O_CREAT | os.O_RDWR, 0o600)
+    path = lock_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    st = os.stat(path.parent, follow_symlinks=False)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+        raise OSError(f"refusing the keyboard lock: {path.parent} must be a directory owned "
+                      f"by uid {os.getuid()} and not writable by group or others")
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     deadline = time.monotonic() + timeout
     while True:
         try:
@@ -266,6 +276,8 @@ class Dongle(Keyboard):
         self.dev.write(msg)
         # acks come back over the radio and lag a few messages behind: check status only
         reply = self.dev.read(33, 0.1)
+        if reply and reply[0] == 0x03 and len(reply) < 4:
+            raise Rejected(f"short reply from the dongle ({reply.hex(' ')})")
         if reply and reply[0] == 0x03 and reply[3]:
             raise Rejected(f"keyboard rejected key {reply[2]} (reply {reply[:4].hex(' ')})")
         time.sleep(0.02)
@@ -313,13 +325,18 @@ class Dongle(Keyboard):
         self._send(0x0F if factory else 0x1F, 0, b"")
 
     def battery(self):
-        while self.dev.read(33, 0.05):
-            pass
+        # drop stale replies, but not forever: a chattering dongle must not hang us
+        deadline = time.monotonic() + 1
+        for _ in range(64):
+            if time.monotonic() >= deadline or not self.dev.read(33, 0.05):
+                break
         self.dev.write(bytes([0x20, 0x01]).ljust(32, b"\0"))
         deadline = time.time() + 1.5
         while time.time() < deadline:
             r = self.dev.read(33, 0.3)
-            if r and r[0] == 0x20 and r[1] == 0x01:
+            if r and r[:2] == b"\x20\x01":
+                if len(r) < 4:
+                    raise Rejected(f"short reply from the dongle ({r.hex(' ')})")
                 if not 0 < r[3] <= 100:
                     raise Rejected("keyboard did not report a level; is it switched to 2.4G?")
                 return r[3]
@@ -331,7 +348,7 @@ def present() -> dict[str, str]:
     found = {}
     if path := hidraw.find(*WIRED, CMD_IFACE):
         found["wired"] = path
-    if path := hidraw.find(*DONGLE, CMD_IFACE):
+    if path := hidraw.find(*DONGLE, CMD_IFACE, DONGLE_NAME, DONGLE_PAGE):
         found["wireless"] = path
     return found
 

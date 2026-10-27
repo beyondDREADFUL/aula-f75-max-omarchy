@@ -12,11 +12,12 @@ import math
 import os
 import signal
 import sys
+import tomllib
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
-from aula_f75 import lighting, transition
+from aula_f75 import lighting, music, transition
 from aula_f75.device import Busy, NotFound, Rejected, open_keyboard, present
 from aula_f75.layout import KEY_SLOTS
 from aula_f75.lcd import clock_payload
@@ -25,6 +26,7 @@ from . import config as cfg
 from .color import describe, hexstr, parse_color, vivid
 
 STATE_VERSION = 2
+EXIT_SKIPPED = 3          # with --strict: no keyboard, or it is busy, so nothing was applied
 VERIFY_TOLERANCE = 18      # summed channel difference; the model is within ~1 per channel
 
 
@@ -59,15 +61,33 @@ def current_target() -> str:
     return hexstr(resolve_target(config, color, exact)[0])
 
 
-def music_following_theme() -> int | None:
-    """The pid of the widget's music visualiser if it shows the theme colour behind the bars."""
+def proc_start_time(pid: int) -> str | None:
+    """Field 22 of /proc/PID/stat (start time in ticks), or None. The comm field (2) may
+    hold spaces and parentheses, so split after the last ')': field 22 is index 19 then."""
     try:
-        pid = int((cfg.STATE_DIR / "music.pid").read_text())
+        text = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+        return text[text.rindex(")") + 1:].split()[19]
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def music_following_theme() -> int | None:
+    """The pid of the widget's music visualiser if it shows the theme colour behind the bars.
+    music.pid holds `PID STARTTIME`; both must match the live process (so a reused pid is not
+    mistaken for it) and its command line must be f75ctl music. A bare `PID` (older file) is
+    accepted only through the command line check."""
+    try:
+        fields = (cfg.STATE_DIR / "music.pid").read_text().split()
+        pid = int(fields[0])
         background = (cfg.STATE_DIR / "music.background").read_text().strip()
         cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except (OSError, ValueError):
+    except (OSError, ValueError, IndexError):
         return None
-    return pid if background == "theme" and b"f75ctl" in cmdline else None
+    if len(fields) > 1 and fields[1] != proc_start_time(pid):
+        return None
+    if background != "theme" or b"f75ctl" not in cmdline or b"music" not in cmdline:
+        return None
+    return pid
 
 
 def _dominant(entries, slots):
@@ -170,17 +190,20 @@ def _hand_to_music(args, summary) -> bool:
     return False
 
 
-def _open_logged(config, summary):
-    """The open keyboard, or the return code when it can't be opened (logged)."""
+def _open_logged(config, summary, strict=False):
+    """The open keyboard, or the return code when it can't be opened (logged). A missing
+    keyboard (skipped) or a busy one (deferred) returns 0, which the theme hook and the
+    systemd service rely on; with strict they return EXIT_SKIPPED."""
+    skipped = EXIT_SKIPPED if strict else 0
     try:
         return open_keyboard(config["device_prefer"])
     except NotFound as exc:
         cfg.log(f"{summary} result=skipped ({exc})")
-        return 0
+        return skipped
     except Busy:
         # music mode or f75ctl holds the keyboard; they hand back with `apply` when done
         cfg.log(f"{summary} result=deferred (keyboard busy)")
-        return 0
+        return skipped
     except OSError as exc:
         # e.g. no access to the hidraw node before the 'aula' group applies
         cfg.log(f"{summary} result=failed ({exc})")
@@ -193,7 +216,11 @@ def _last_target(state):
 
 
 def _choose_brightness(args, kb, state, config) -> int:
-    stored = min(max(int(state.get("brightness", config["default_brightness"])), 1), 5)
+    try:
+        stored = int(state.get("brightness", config["default_brightness"]))
+    except (TypeError, ValueError, OverflowError):
+        stored = config["default_brightness"]      # corrupt state.json
+    stored = min(max(stored, 1), 5)
     if args.brightness is not None:
         return min(max(args.brightness, 1), 5)
     if config["rainbow"]:
@@ -264,7 +291,7 @@ def cmd_apply(args) -> int:
         return 0
     if _hand_to_music(args, summary):
         return 0
-    kb = _open_logged(config, summary)
+    kb = _open_logged(config, summary, getattr(args, "strict", False))
     if isinstance(kb, int):
         return kb
     try:
@@ -276,14 +303,19 @@ def cmd_apply(args) -> int:
         return 1
     _save_and_log(kb, summary, theme, accent, source, target, brightness, config, verified,
                   picked=bool(args.color))
-    return 0 if verified != "False" else 1
+    if verified == "False":
+        return 1
+    if getattr(args, "unpin", False) and not args.pin:
+        cfg.clear_pin()         # only now: a failed apply keeps the pin
+    return 0
 
 
-def _reapply(brightness=None) -> int:
+def _reapply(brightness=None, strict=False) -> int:
     """`f75ctl theme apply`, optionally forcing a brightness. A colour chosen by hand (and
     not pinned) is kept, so a speed or effect change doesn't fall back to the theme."""
     args = build_parser().parse_args(["apply"])
     args.brightness = brightness
+    args.strict = strict
     state = cfg.load_state()
     if state.get("picked") and cfg.load_pin() is None and state.get("target"):
         args.color, args.exact = state["target"], True
@@ -299,7 +331,7 @@ def cmd_set_effect(args) -> int:
     else:
         print(f"unknown effect {args.effect!r}", file=sys.stderr)
         return 2
-    return _reapply()
+    return _reapply(strict=args.strict)
 
 
 def cmd_set_rainbow(args) -> int:
@@ -307,16 +339,37 @@ def cmd_set_rainbow(args) -> int:
         cfg.save_rainbow(True, args.speed)
     else:
         cfg.save_rainbow(False, args.speed)
-    return _reapply()
+    return _reapply(strict=args.strict)
+
+
+def cmd_reset(args) -> int:
+    """Back to the theme: clear the pin and the rainbow flag (the effect, speed and transition
+    stay) and forget the hand-picked colour, then apply the theme colour."""
+    cfg.clear_pin()
+    cfg.clear_rainbow()
+    state = cfg.load_state()
+    if state.get("picked"):
+        state["picked"] = False
+        cfg.save_state(state)
+    return _reapply(strict=args.strict)
+
+
+def cmd_choices(args) -> int:
+    """The names the widget offers, from the library's own lists."""
+    print(json.dumps({
+        "effects": [m for m in lighting.MODES if m not in cfg.NO_COLOR_EFFECTS],
+        "bars": [b for b in music.BAR_COLORS if b != "off"],
+        "backgrounds": ["off", "theme", *[b for b in music.BACKGROUNDS if b != "off"]],
+    }))
+    return 0
 
 
 def cmd_palette(args) -> int:
-    import tomllib
     colors = tomllib.loads((cfg.THEME_DIR / "colors.toml").read_text(encoding="utf-8"))
     config = cfg.load_config()
     target, accent, _ = resolve_target(config)
-    for source, target in theme_palette(config, colors, (hexstr(accent), hexstr(target))):
-        print(source, target)
+    for source, led in theme_palette(config, colors, (hexstr(accent), hexstr(target))):
+        print(source, led)
     return 0
 
 
@@ -334,7 +387,7 @@ def cmd_set_brightness(args) -> int:
     state = cfg.load_state()
     state["brightness"] = min(max(args.brightness, 1), 5)
     cfg.save_state(state)
-    return _reapply(args.brightness)
+    return _reapply(args.brightness, strict=args.strict)
 
 
 def cmd_read(args) -> int:
@@ -407,24 +460,30 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="f75ctl theme",
                                 description="Follow the active Omarchy theme on an AULA F75 Max.")
     sub = p.add_subparsers(dest="command", required=True)
-    a = sub.add_parser("apply", help="apply the current theme colour")
+    strict = argparse.ArgumentParser(add_help=False)
+    strict.add_argument("--strict", action="store_true",
+                        help=f"exit {EXIT_SKIPPED} when nothing was applied because the keyboard "
+                        "is missing or busy (default: 0, which the hook and service rely on)")
+    a = sub.add_parser("apply", help="apply the current theme colour", parents=[strict])
     a.add_argument("theme", nargs="?", help="theme name for logging")
     a.add_argument("--dry-run", action="store_true", help="print the target colour only")
     a.add_argument("--color", help="use this colour instead of the theme accent")
     a.add_argument("--exact", action="store_true", help="with --color, use it as written")
     a.add_argument("--pin", action="store_true",
                    help="with --color, keep it across theme changes until `unpin`")
+    a.add_argument("--unpin", action="store_true",
+                   help="clear the pin after a successful apply (not with --pin)")
     a.add_argument("--brightness", type=int, help="force a brightness level 1-5")
     a.add_argument("--verify", action="store_true", help="read the keys back afterwards (wired)")
     a.set_defaults(func=cmd_apply)
     e = sub.add_parser("set-effect", help="show the accent as this effect and apply "
-                       "(\"default\" returns to the config's effect)")
+                       "(\"default\" returns to the config's effect)", parents=[strict])
     e.add_argument("effect", choices=["default", *[m for m in lighting.MODES
                                                    if m not in cfg.NO_COLOR_EFFECTS]])
     e.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     e.set_defaults(func=cmd_set_effect)
     r = sub.add_parser("set-rainbow", help="turn the firmware's rainbow flag on or off for the "
-                       "current effect, and apply")
+                       "current effect, and apply", parents=[strict])
     r.add_argument("state", choices=["on", "off"])
     r.add_argument("--speed", type=int, choices=range(6), help="effect speed 0-5")
     r.set_defaults(func=cmd_set_rainbow)
@@ -433,6 +492,11 @@ def build_parser() -> argparse.ArgumentParser:
     t.set_defaults(func=cmd_set_transition)
     sub.add_parser("palette", help="the theme's colours as the keys would show them").set_defaults(
         func=cmd_palette)
+    sub.add_parser("reset", help="clear the pin, the rainbow and a picked colour, apply the "
+                   "theme colour", parents=[strict]).set_defaults(func=cmd_reset)
+    c = sub.add_parser("choices", help="the effect, bar and background names (JSON)")
+    c.add_argument("--json", action="store_true", help="accepted for clarity; always JSON")
+    c.set_defaults(func=cmd_choices)
     sub.add_parser("unpin", help="clear the pinned colour (does not apply)").set_defaults(
         func=cmd_unpin)
     sub.add_parser("read", help="dump the live LED table (wired)").set_defaults(func=cmd_read)
@@ -440,7 +504,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--read-table", action="store_true", help="also read the keys (wired)")
     s.add_argument("--json", action="store_true", help="print one JSON object (for the bar widget)")
     s.set_defaults(func=cmd_status)
-    b = sub.add_parser("set-brightness", help="set brightness 1-5 and reapply")
+    b = sub.add_parser("set-brightness", help="set brightness 1-5 and reapply", parents=[strict])
     b.add_argument("brightness", type=int)
     b.set_defaults(func=cmd_set_brightness)
     return p
@@ -452,4 +516,7 @@ def main(argv=None) -> int:
         return int(args.func(args))
     except (NotFound, Busy, Rejected, OSError) as exc:
         print(exc, file=sys.stderr)
+        return 1
+    except (ValueError, RuntimeError) as exc:      # includes tomllib.TOMLDecodeError
+        print(f"f75ctl theme: {exc}", file=sys.stderr)
         return 1

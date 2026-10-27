@@ -111,6 +111,49 @@ class Effects(unittest.TestCase):
         self.assertEqual(msg[31], sum(msg[:31]) & 0xFF)
 
 
+class ReplyDev(FakeDev):
+    """Answers every read with the next of `before` until something is written, then with
+    the next of `after`; counts the reads that came before the write."""
+
+    def __init__(self, before=(), after=(), stale=None):
+        super().__init__()
+        self.before, self.after, self.stale, self.reads_before = list(before), list(after), stale, 0
+
+    def read(self, size, timeout):
+        if not self.writes:
+            self.reads_before += 1
+            return self.before.pop(0) if self.before else self.stale
+        return self.after.pop(0) if self.after else None
+
+
+class DongleReplies(unittest.TestCase):
+    def test_short_status_reply_is_rejected(self):
+        for reply in (b"\x03", b"\x03\x10", b"\x03\x10\x00"):
+            kb = fake(Dongle, ReplyDev(after=[reply]))
+            with self.assertRaises(Rejected, msg=reply.hex(" ")):
+                kb.light(lighting.Effect("static", (0, 255, 0)))
+
+    def test_full_accepting_reply_passes(self):
+        kb = fake(Dongle, ReplyDev(after=[b"\x03\x10\x00\x00"]))
+        kb.light(lighting.Effect("static", (0, 255, 0)))
+
+    def test_short_battery_reply_is_rejected(self):
+        for reply in (b"\x20\x01", b"\x20\x01\x00"):
+            kb = fake(Dongle, ReplyDev(after=[reply]))
+            with self.assertRaises(Rejected, msg=reply.hex(" ")):
+                kb.battery()
+
+    def test_one_byte_battery_reply_is_skipped(self):
+        kb = fake(Dongle, ReplyDev(after=[b"\x20", b"\x20\x01\x00\x55"]))
+        self.assertEqual(kb.battery(), 0x55)
+
+    def test_battery_drain_is_bounded(self):
+        # a dongle that never stops sending stale reports must not hang the drain
+        kb = fake(Dongle, ReplyDev(stale=b"\x05" * 32, after=[b"\x20\x01\x00\x40"]))
+        self.assertEqual(kb.battery(), 0x40)
+        self.assertLessEqual(kb.dev.reads_before, 64)
+
+
 class Calibration(unittest.TestCase):
     # requested colour, brightness -> value read back from the keyboard
     MEASURED = [((255, 0, 0), 5, (0xa8, 0, 0)), ((255, 255, 255), 5, (0xa8, 0xfd, 0xfd)),

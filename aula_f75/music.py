@@ -100,9 +100,10 @@ mono_option = average
 """
 
 
-def cava_levels(opts: Options):
+def cava_levels(opts: Options, stopped=lambda: False):
     """(iterator of COLS levels 0..1, close). Raises MusicError if cava is missing or prints
-    nothing within 3 s."""
+    nothing within 3 s. While cava is silent the iterator checks stopped() every 0.5 s and
+    ends when it returns true, so a stalled cava can't block a stop."""
     exe = shutil.which("cava")
     if not exe:
         raise MusicError("music needs cava: sudo pacman -S cava")
@@ -112,20 +113,34 @@ def cava_levels(opts: Options):
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     fd = proc.stdout.fileno()
 
-    def close():
+    def end():
         proc.terminate()
-        proc.wait()
+        try:
+            proc.wait(2)
+        except subprocess.TimeoutExpired:     # a stalled cava that ignores SIGTERM
+            proc.kill()
+            proc.wait()
         os.unlink(cfg.name)
+
+    def close():
+        end()
+        proc.stdout.close()
+        proc.stderr.close()
     if not select.select([fd], [], [], 3)[0] or proc.poll() is not None:
-        close()
+        end()
         err = proc.stderr.read().decode(errors="replace").strip()
+        proc.stdout.close()
+        proc.stderr.close()
         raise MusicError(f"cava did not start{': ' + err[-200:] if err else ''}")
     gain = 0.6 + 0.2 * opts.amplitude
 
     def levels():
         buf = b""
         while True:
-            select.select([fd], [], [])
+            if not select.select([fd], [], [], 0.5)[0]:
+                if stopped():
+                    return
+                continue
             chunk = os.read(fd, 4096)
             if not chunk:
                 raise MusicError("cava stopped")
@@ -171,7 +186,8 @@ def run(kb, opts: Options, on_start=print, reload=None) -> tuple[float, int | No
             levels = pattern()
         else:
             name = "cava"
-            levels, close = cava_levels(opts)
+            levels, close = cava_levels(opts, lambda: bool(stop) or (
+                opts.seconds is not None and time.time() - t_start >= opts.seconds))
         on_start(f"{name}; Ctrl+C to stop")
         while not stop and (opts.seconds is None or time.time() - t_start < opts.seconds):
             loop_start = time.time()
@@ -179,7 +195,10 @@ def run(kb, opts: Options, on_start=print, reload=None) -> tuple[float, int | No
                 hup.clear()
                 if reload:
                     reload(opts)
-            draw(next(levels))
+            frame = next(levels, None)
+            if frame is None:            # stopped while cava was silent
+                break
+            draw(frame)
             # cava can deliver buffered frames at once; don't exceed fps
             time.sleep(max(0, interval - (time.time() - loop_start)))
     finally:

@@ -37,6 +37,13 @@ class ParseColor(unittest.TestCase):
     def test_rgb_is_clamped(self):
         self.assertEqual(parse_color("rgb(300, -5, 10)"), (255, 0, 10))
 
+    def test_rejects_non_finite_and_huge_numbers(self):
+        # int(float("1e999")) would raise OverflowError, which callers don't catch
+        for text in ("rgb(1e999,0,0)", "rgb(0,-1e999,0)", "rgb(inf,0,0)", "rgb(nan,0,0)",
+                     "rgba(0,0,1e300,1)"):
+            with self.assertRaises(ValueError, msg=text):
+                parse_color(text)
+
     def test_rejects_bad_input(self):
         for text in ("", "   ", "#12345", "#GGGGGG", "rgb(1,2)", "rgb(a,b,c)", "red"):
             with self.assertRaises(ValueError, msg=text):
