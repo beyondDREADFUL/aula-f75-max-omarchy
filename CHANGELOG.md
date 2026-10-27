@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-27 (widget design)
+- Reset to theme shows under the Keyboard and Theme boxes, and only when the keys differ
+  from the theme; the Keep row is just the switch again.
+- Dropdowns show readable names (Static, Single on, Spectrum cycle, Dark); the commands
+  are unchanged.
+- The Transition row shows only when a colour change would animate (static effect, no
+  rainbow, cable connected).
+- While the rainbow is on, the Keyboard box says RAINBOW with a rainbow strip, and only
+  the rainbow swatch is marked.
+
 ## 2026-10-27 (audit fixes)
 - Reset to theme really returns to the theme colour after a picked colour. Reset also clears
   the pin and the rainbow; the effect stays. New `f75ctl theme reset`.

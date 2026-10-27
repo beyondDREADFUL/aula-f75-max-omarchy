@@ -46,11 +46,20 @@ Panel {
     "white", "red", "orange", "yellow", "green", "cyan", "blue", "purple"])
 
   function barOptionsFrom(names) {
-    return names.map(function(n) { return { value: n, label: n } })
+    return names.map(function(n) { return { value: n, label: root.displayName(n) } })
   }
 
   function backgroundOptionsFrom(names) {
-    return names.map(function(n) { return { value: n, label: n === "off" ? "Dark" : n } })
+    return names.map(function(n) { return { value: n, label: root.displayName(n) } })
+  }
+
+  // The readable label for an option value: "single-on" -> "Single on". A colour sequence
+  // keeps its hyphens, and the dark background is stored as "off".
+  function displayName(value) {
+    var text = String(value)
+    if (text === "off") return "Dark"
+    if (text !== "green-yellow-red") text = text.replace(/-/g, " ")
+    return text.charAt(0).toUpperCase() + text.slice(1)
   }
 
   function optionLabel(options, value) {
@@ -87,7 +96,7 @@ Panel {
   readonly property string connection: wired ? "CABLE" : wireless ? "2.4G" : "NOT CONNECTED"
   readonly property string tooltipText: devices.length === 0
     ? "Keyboard not connected"
-    : "Keyboard " + (rainbow ? "rainbow" : keyboardHex || "—") + " · " + effect + " · " + brightness + "/5 · "
+    : "Keyboard " + (rainbow ? "rainbow" : keyboardHex || "—") + " · " + displayName(effect) + " · " + brightness + "/5 · "
       + (wired ? "cable" : "2.4G") + (musicOn ? " · music on" : "") + (pinned ? " · pinned" : "")
 
   // Hidden, the bar slot takes no space: it sizes itself from a visible item only.
@@ -644,7 +653,8 @@ Panel {
         height: width
         radius: width / 2
         color: modelData
-        readonly property bool current: root.normalize(modelData) === root.keyboardHex
+        // while the rainbow is on, only the rainbow swatch is the keys' colour
+        readonly property bool current: !root.rainbow && root.normalize(modelData) === root.keyboardHex
         border.width: current ? Style.space(2) : Math.max(1, Style.space(1))
         border.color: current ? root.fg : Qt.darker(root.fg, 2.0)
 
@@ -775,9 +785,10 @@ Panel {
 
           Repeater {
             model: [
-              { label: root.pinned ? "KEYBOARD · PINNED" : root.matches ? "KEYBOARD" : "KEYBOARD · CUSTOM",
-                hex: root.rainbow ? "" : root.keyboardHex, shown: root.rainbow ? "rainbow" : "" },
-              { label: "THEME", hex: root.themeHex }
+              { label: root.rainbow ? "KEYBOARD · RAINBOW" : root.pinned ? "KEYBOARD · PINNED"
+                       : root.matches ? "KEYBOARD" : "KEYBOARD · CUSTOM",
+                hex: root.rainbow ? "" : root.keyboardHex, rainbow: root.rainbow },
+              { label: "THEME", hex: root.themeHex, rainbow: false }
             ]
 
             Rectangle {
@@ -804,14 +815,52 @@ Panel {
                 }
 
                 Text {
+                  visible: !modelData.rainbow
                   anchors.horizontalCenter: parent.horizontalCenter
-                  text: modelData.hex !== "" ? modelData.hex : modelData.shown || "—"
+                  text: modelData.hex !== "" ? modelData.hex : "—"
                   color: root.textOn(modelData.hex)
                   font.family: root.family
                   font.pixelSize: Style.font.caption
                 }
+
+                // the rainbow has no single colour to name, so show it
+                Rectangle {
+                  visible: modelData.rainbow
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  width: Style.space(96)
+                  height: Style.space(6)
+                  radius: height / 2
+                  gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#FF0000" }
+                    GradientStop { position: 0.17; color: "#FF8000" }
+                    GradientStop { position: 0.33; color: "#FFE000" }
+                    GradientStop { position: 0.5; color: "#00D040" }
+                    GradientStop { position: 0.67; color: "#00A0FF" }
+                    GradientStop { position: 0.83; color: "#8030FF" }
+                    GradientStop { position: 1.0; color: "#FF2D95" }
+                  }
+                }
               }
             }
+          }
+        }
+
+        // Back to the theme colour; only offered when the keys differ from it.
+        Item {
+          visible: !root.sameColour
+          width: parent.width
+          implicitHeight: resetButton.implicitHeight
+
+          Button {
+            id: resetButton
+            anchors.right: parent.right
+            text: "Reset to theme"
+            bordered: true
+            foreground: root.fg
+            fontFamily: root.family
+            fontSize: Style.font.caption
+            onClicked: root.resetToTheme()
           }
         }
 
@@ -900,28 +949,12 @@ Panel {
           }
         }
 
-        // Keep switch with the small Reset button beside it.
         LabelledRow {
           label: "Keep through theme changes"
-          Row {
-            spacing: Style.space(8)
-
-            Button {
-              anchors.verticalCenter: parent.verticalCenter
-              text: "Reset"
-              bordered: true
-              foreground: root.fg
-              fontFamily: root.family
-              fontSize: Style.font.caption
-              onClicked: root.resetToTheme()
-            }
-
-            ToggleSwitch {
-              anchors.verticalCenter: parent.verticalCenter
-              checked: root.pinned
-              foreground: root.fg
-              onToggled: root.setKeep(!root.pinned)
-            }
+          ToggleSwitch {
+            checked: root.pinned
+            foreground: root.fg
+            onToggled: root.setKeep(!root.pinned)
           }
         }
 
@@ -963,7 +996,7 @@ Panel {
           label: "Effect"
           OptionDropdown {
             fieldWidth: root.dropdownWidth
-            options: root.effects.map(function(n) { return { value: n, label: n } })
+            options: root.effects.map(function(n) { return { value: n, label: root.displayName(n) } })
             value: root.effect
             onPicked: function(v) { if (v !== root.effect) root.setEffect(v, root.speed) }
           }
@@ -997,7 +1030,9 @@ Panel {
           }
         }
 
+        // Only a static-to-static colour change over the cable uses it.
         LabelledRow {
+          visible: root.effect === "static" && !root.rainbow && root.wired
           label: "Transition"
           ButtonGroup {
             options: [{ value: "none", label: "None" }, { value: "fade", label: "Fade" },

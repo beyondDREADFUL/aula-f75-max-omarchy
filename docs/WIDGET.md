@@ -17,8 +17,8 @@ Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 |---|---|
 | Header | connection (`CABLE` or `2.4G`, with the battery level over 2.4G) |
 | Keyboard / Theme | one strip when the keys show the theme colour; Keyboard and Theme side by side otherwise; `PINNED` or `CUSTOM` when they differ |
-| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as "rainbow" in the Keyboard box); a hex field with a live preview and Apply; the **Keep through theme changes** switch with a small **Reset** button |
-| LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable |
+| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as a rainbow strip in the Keyboard box); a hex field with a live preview and Apply; the **Keep through theme changes** switch |
+| LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable, shown only when it applies (static effect, no rainbow, cable connected) |
 | MUSIC | the music visualiser switch (needs the USB cable), with two dropdowns: the bar colour and what shows behind the bars |
 
 A colour picked here is sent exactly as shown (`apply --exact`). The swatches
@@ -30,7 +30,7 @@ colour again. **Keep through theme changes** shows whether the colour is pinned:
 on pins the colour the keys have now, so it survives theme changes, login and
 reconnects; a colour picked while it is on replaces the pin. Switching it off releases it.
 
-**Reset** (and right-click on the icon) clears a pin, a hand-picked colour and the
+**Reset to theme**, shown under the Keyboard and Theme boxes when the keys differ from the theme (and right-click on the icon), clears a pin, a hand-picked colour and the
 rainbow, and returns to the theme colour. The effect stays.
 
 The effect and speed chosen here are remembered over the config's `[lighting]`
