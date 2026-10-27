@@ -249,6 +249,13 @@ class Apply(Isolated):
         self.apply("set-brightness", "2", kb=kb)
         self.assertEqual(kb.lit[-1].color, (255, 0, 0))
 
+    def test_rainbow_on_after_a_picked_colour_stays_on(self):
+        self.apply("apply", "--color", "#ff0000", "--exact", kb=FakeKb())
+        kb = FakeKb()
+        self.apply("set-rainbow", "on", kb=kb)
+        self.assertIs(cfg.load_state()["rainbow"], True)
+        self.assertIs(cfg.effect_override().get("rainbow"), True)
+
     def test_theme_apply_drops_the_picked_colour(self):
         cfg.save_transition("none")           # the fake keyboard can't animate a change
         self.apply("apply", "--color", "#ff0000", "--exact", kb=FakeKb())
