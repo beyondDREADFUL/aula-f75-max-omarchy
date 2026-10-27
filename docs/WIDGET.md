@@ -17,7 +17,7 @@ Omarchy bar widget for the AULA F75 Max, built on `f75ctl theme` and
 |---|---|
 | Header | connection (`CABLE`, `2.4G` with the battery level, in a warning colour below 20%, or `OFFLINE`) |
 | Status | a colour chip (the rainbow as a strip, a note while music plays), then what the keys show: Theme colour, a hex, Rainbow or Music, with a pin mark when kept; the effect (or the bar colours) in a pill; below, how it relates to the theme; **Reset** at the right when the keys differ from the theme. Not connected: only this line, saying to plug in the cable or the dongle |
-| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow, shown as a rainbow strip in the Keyboard box); a hex field with a live preview and Apply; the **Keep when the theme changes** switch |
+| COLOUR | the theme's colours (accent, red, yellow, green, cyan, blue, magenta, each as the keys would show it, repeats left out) and a row of bright colours that starts with a rainbow swatch (toggles the firmware's rainbow on the current effect, shown as a rainbow strip in the status line); a hex field with a live preview and Apply; the **Keep when the theme changes** switch |
 | LIGHT | brightness 1-5 (slider); the effect, picked from a dropdown; speed 0-5 for effects other than static; the transition (none, fade, wave, burst) used for the next colour change over the cable, shown only when it applies (static effect, no rainbow, cable connected) |
 | MUSIC | the visualiser switch in the section header (needs the USB cable; over 2.4G the section says so), with two dropdowns: the bar colour and what shows behind the bars. While music plays, COLOUR and LIGHT are locked with "Music is driving the keys" |
 
@@ -26,7 +26,7 @@ already show what the keys get, and the keyboard's firmware applies its own whit
 balance (docs/HANDBOOK.md §5).
 
 A colour lasts until the next theme change, when the theme hook sets the theme
-colour again. **Keep through theme changes** shows whether the colour is pinned: switching it
+colour again. **Keep when the theme changes** shows whether the colour is pinned: switching it
 on pins the colour the keys have now, so it survives theme changes, login and
 reconnects; a colour picked while it is on replaces the pin. Switching it off releases it.
 

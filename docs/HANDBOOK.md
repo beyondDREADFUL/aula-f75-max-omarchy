@@ -5,7 +5,8 @@ and how the accent controller and `f75ctl` use it.
 
 - Keyboard: AULA F75 Max, wired `0c45:800a` and 2.4 GHz dongle `05ac:024f`
 - Platform: Omarchy on Arch (Hyprland), Linux hidraw
-- Last verified: 2026-10-24, cable and dongle, on the reference keyboard
+- Last verified: 2026-10-27, cable and dongle, on the reference keyboard (settings, resets,
+  Right Alt and the rainbow flag on 2026-10-26; the audit fixes on 2026-10-27)
 
 Every protocol statement is marked by how it was established:
 
