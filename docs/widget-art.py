@@ -2,6 +2,11 @@
 
     cd docs && python3 widget-art.py && rsvg-convert -z 2 widget.svg -o widget.png && rm widget.svg
 
+It also writes preview.svg, the same drawing padded to 16:9 for the marketplace card (which
+crops to 16:9):
+
+    rsvg-convert -z 2 preview.svg -o ../preview.png && rm preview.svg
+
 A drawing of the panel (AulaF75.qml), not a screenshot: update it when the panel changes."""
 import math
 
@@ -221,4 +226,13 @@ svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height
        f'viewBox="0 0 {width} {height}"><rect width="{width}" height="{height}" rx="18" fill="{BG}"/>'
        + "".join(parts) + "</svg>")
 open("widget.svg", "w", encoding="utf-8").write(svg)
-print(width, height)
+
+# the marketplace card: the same drawing centred on a 16:9 canvas
+pw = round(height * 16 / 9)
+pad = (pw - width) / 2
+inner = svg[svg.index(">") + 1:-len("</svg>")]
+preview = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{pw}" height="{height}" '
+           f'viewBox="0 0 {pw} {height}"><rect width="{pw}" height="{height}" fill="{BG}"/>'
+           f'<g transform="translate({pad},0)">{inner}</g></svg>')
+open("preview.svg", "w", encoding="utf-8").write(preview)
+print(width, height, pw)
